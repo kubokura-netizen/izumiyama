@@ -1,0 +1,17 @@
+{
+  "_about": "SOP(Word/.docx)へヒアリングシートの内容を差し込む設定。各SOPの定型サンプル値(find)を、ヒアリングの値(source)で置換する。図・表・書式はそのまま保持される。",
+  "template_folder": "SOP",
+  "output_prefix": "SOP_",
+  "replacements": [
+    {
+      "desc": "クリニック名（医療機関名）",
+      "find": ["やまだ整形外科クリニック"],
+      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" }
+    },
+    {
+      "desc": "施設管理者 氏名",
+      "find": ["山田　太郎", "山田 太郎", "山田太郎"],
+      "source": { "t": "hearing", "label": "特定細胞加工物製造事業者の名称", "section": "細胞加工施設" }
+    }
+  ]
+}

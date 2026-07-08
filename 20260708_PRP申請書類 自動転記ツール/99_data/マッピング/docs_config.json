@@ -1,0 +1,1490 @@
+{
+ "_about": "フォルダ型テンプレの転記設定。excel=様式のセル転記, docx=サンプル値の一括置換, passthrough=無変更で同梱(PDF等)。",
+ "hearing_sheet": "ヒアリングシート（PRP）",
+ "documents": {
+  "2種関節系PRP": {
+   "folder": "2種関節系PRP",
+   "excel": {
+    "file": "01.【様式第一の二】 再生医療等提供計画 (治療) 整形外科(PRP二種）.xlsx",
+    "sheet": "1 の２提供計画（治療）",
+    "entries": [
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N11",
+      "var": "医療機関_名称",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N14",
+      "var": "医療機関_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N17",
+      "var": "管理者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "開設者（診療所開設届上）※医療法人の場合",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:法人=役職+氏名/個人=氏名のみ"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L27",
+      "var": "再生医療等_名称",
+      "source": {
+       "t": "hearing",
+       "label": "再生医療①（右記タブから選択）",
+       "section": "再生医療の名称",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "2種=再生医療①/3種=再生医療②"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L44",
+      "var": "実施責任者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "氏名",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L45",
+      "var": "実施責任者_所属機関",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L46",
+      "var": "実施責任者_所属部署",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:部署欄なし→医療機関名で代用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L47",
+      "var": "実施責任者_郵便番号",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/郵便番号（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "postal",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L48",
+      "var": "実施責任者_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L49",
+      "var": "実施責任者_電話",
+      "source": {
+       "t": "hearing",
+       "label": "電話番号",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L50",
+      "var": "実施責任者_メール",
+      "source": {
+       "t": "hearing",
+       "label": "メールアドレス",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L51",
+      "var": "事務担当者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "氏名",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L52",
+      "var": "事務担当者_所属機関",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L53",
+      "var": "事務担当者_所属部署",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:部署欄なし→医療機関名で代用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L54",
+      "var": "事務担当者_郵便番号",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/郵便番号（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "postal",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L55",
+      "var": "事務担当者_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L56",
+      "var": "事務担当者_電話",
+      "source": {
+       "t": "hearing",
+       "label": "電話番号",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L57",
+      "var": "事務担当者_FAX",
+      "source": {
+       "t": "unknown"
+      },
+      "tf": "text",
+      "note": "確認対象:ヒアリングにFAX欄なし"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L58",
+      "var": "事務担当者_メール",
+      "source": {
+       "t": "hearing",
+       "label": "メールアドレス",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L68",
+      "var": "救急_設備内容",
+      "source": {
+       "t": "hearing",
+       "label": "救急医療に必要な施設又は設備の確認",
+       "section": "救急対応",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L92",
+      "var": "加工方法",
+      "source": {
+       "t": "kit",
+       "part": "加工",
+       "idx": 0,
+       "numbered": true
+      },
+      "tf": "text",
+      "note": "確認対象:PRPキット→加工方法を①②③で連番連結"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L95",
+      "var": "投与方法",
+      "source": {
+       "t": "kit",
+       "part": "投与",
+       "idx": 1
+      },
+      "tf": "text",
+      "note": "確認対象:PRPメーカーE列(投与方法)。複数キットでも共通のため先頭キット採用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L97",
+      "var": "製造事業者_名称",
+      "source": {
+       "t": "hearing",
+       "label": "特定細胞加工物製造事業者の名称",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L98",
+      "var": "加工施設_施設番号",
+      "source": {
+       "t": "hearing",
+       "label": "施設番号",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L99",
+      "var": "加工施設_名称",
+      "source": {
+       "t": "hearing",
+       "label": "細胞培養加工施設の名称",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L155",
+      "var": "委員会_名称",
+      "source": {
+       "t": "hearing",
+       "label": "認定再生医療等委員会の名称",
+       "section": "審査委員会",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L156",
+      "var": "委員会_認定番号",
+      "source": {
+       "t": "committee"
+      },
+      "tf": "text",
+      "note": "委員会名→審査委員会シートで番号取得"
+     }
+    ],
+    "doctor_fill": {
+     "block_label": "再生医療等を行う医師又は歯科医師",
+     "col": 12,
+     "name_offset": 1,
+     "affil_offset": 2,
+     "max": 15
+    },
+    "cell_edits": [
+     {
+      "cell": "L85",
+      "op": "replace_from",
+      "marker": "①Condensia",
+      "source": {
+       "t": "kit",
+       "part": "採取",
+       "mode": "block",
+       "numbered": true
+      },
+      "desc": "採取方法(選択キット)"
+     },
+     {
+      "cell": "L149",
+      "op": "replace_find",
+      "find": [
+       "〇〇医師会医賠償責任保険",
+       "秦野伊勢原医師会医賠償責任保険"
+      ],
+      "source": {
+       "t": "hearing",
+       "label": "健康被害を補償・カバーする加入保険名称",
+       "section": "救急対応"
+      },
+      "desc": "保険名称"
+     },
+     {
+      "cell": "L152",
+      "op": "replace_find",
+      "find": [
+       "〇〇医師会医賠償責任保険",
+       "秦野伊勢原医師会医賠償責任保険"
+      ],
+      "source": {
+       "t": "hearing",
+       "label": "健康被害を補償・カバーする加入保険名称",
+       "section": "救急対応"
+      },
+      "desc": "保険名称"
+     },
+     {
+      "cell": "L168",
+      "op": "replace_from",
+      "marker": "■お問合せ先",
+      "source": {
+       "t": "hearing",
+       "label": "患者からの問い合わせ先",
+       "section": "人員"
+      },
+      "desc": "問い合わせ先"
+     },
+     {
+      "cell": "L37",
+      "op": "replace_find",
+      "find": [
+       "11mL-20mL",
+       "11～20mL"
+      ],
+      "source": {
+       "t": "blood_volume"
+      },
+      "desc": "採血量(範囲)"
+     },
+     {
+      "cell": "L80",
+      "op": "replace_find",
+      "find": [
+       "11mL-20mL",
+       "11～20mL"
+      ],
+      "source": {
+       "t": "blood_volume"
+      },
+      "desc": "採血量(範囲)"
+     },
+     {
+      "cell": "L81",
+      "op": "replace_price",
+      "source": {
+       "t": "kitprice",
+       "saisei": 1
+      },
+      "desc": "治療価格ブロック"
+     }
+    ]
+   },
+   "docx_kit": [
+    {
+     "token": "{{採取方法}}",
+     "source": {
+      "t": "kit",
+      "part": "採取",
+      "mode": "block",
+      "numbered": true
+     }
+    },
+    {
+     "token": "{{加工方法}}",
+     "source": {
+      "t": "kit",
+      "part": "加工",
+      "mode": "block",
+      "numbered": true
+     }
+    },
+    {
+     "token": "{{治療価格}}",
+     "source": {
+      "t": "kitprice",
+      "saisei": 1
+     }
+    },
+    {
+     "token": "{{患者からの問い合わせ先}}",
+     "source": {
+      "t": "hearing",
+      "label": "患者からの問い合わせ先",
+      "occ": 1
+     }
+    }
+   ],
+   "docx_table": [],
+   "docx": [
+    {
+     "desc": "クリニック名",
+     "find": [
+      "やまだ整形外科クリニック",
+      "さこ整形外科・リハビリテーション科",
+      "さこ・リハビリテーション"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/名称（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "住所",
+     "find": [
+      "神奈川県横須賀市浦賀1-2-3",
+      "神奈川県秦野市大秦町2-16クリエイトエス・ディー秦野大秦町店2F"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/住所（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "郵便番号",
+     "find": [
+      "257-0034"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/郵便番号（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "電話番号",
+     "find": [
+      "0463-59-9901"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "電話番号",
+      "section": "実施責任者"
+     }
+    },
+    {
+     "desc": "メール",
+     "find": [
+      "yamada@abc.com"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "メールアドレス",
+      "section": "実施責任者"
+     }
+    },
+    {
+     "desc": "氏名(開設者/管理者)",
+     "find": [
+      "山田　太郎",
+      "山田 太郎",
+      "山田太郎",
+      "迫　浩輔",
+      "迫 浩輔",
+      "迫浩輔"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "開設者（診療所開設届上）※医療法人でない場合",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "委員会名",
+     "find": [
+      "JSCSF再生医療等委員会"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "認定再生医療等委員会の名称",
+      "section": "審査委員会"
+     }
+    },
+    {
+     "desc": "認定番号",
+     "find": [
+      "NA8230002"
+     ],
+     "source": {
+      "t": "committee"
+     }
+    },
+    {
+     "desc": "受付番号",
+     "find": [
+      "000000000",
+      "01C2605012"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "受付番号",
+      "section": "受付番号"
+     }
+    },
+    {
+     "desc": "保険名称",
+     "find": [
+      "〇〇医師会医賠償責任保険",
+      "秦野伊勢原医師会医賠償責任保険",
+      "東日本医師賠償責任保険"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "健康被害を補償・カバーする加入保険名称",
+      "section": "救急対応"
+     }
+    },
+    {
+     "desc": "委員会連絡先名",
+     "find": [
+      "一般社団法人 日本先進医療臨床研究会"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "連絡先名"
+     }
+    },
+    {
+     "desc": "委員会住所",
+     "find": [
+      "〒103-0028 東京都中央区八重洲1-8-17 新槇町ビル6F",
+      "〒103-0028東京都中央区八重洲1-8-17 新槇町ビル6F"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "住所"
+     }
+    },
+    {
+     "desc": "委員会TEL",
+     "find": [
+      "03-5542-1597"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "TEL"
+     }
+    },
+    {
+     "desc": "標準書 作成年月日=作業日",
+     "file_contains": "標準書",
+     "find": [
+      "作成年月日：2026年5月8日",
+      "作成年月日：2026年5月11日"
+     ],
+     "source": {
+      "t": "compose",
+      "lines": [
+       {
+        "prefix": "作成年月日：",
+        "source": {
+         "t": "today",
+         "fmt": "ymd"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "desc": "標準書 施行年月日=作業日",
+     "file_contains": "標準書",
+     "find": [
+      "施行年月日：2026年5月8日",
+      "施行年月日：2026年5月11日"
+     ],
+     "source": {
+      "t": "compose",
+      "lines": [
+       {
+        "prefix": "施行年月日：",
+        "source": {
+         "t": "today",
+         "fmt": "ymd"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "desc": "採血量(総量範囲)",
+     "find": [
+      "11mL-20mL",
+      "11～20mL",
+      "11-20ml",
+      "約11mL-20mL"
+     ],
+     "source": {
+      "t": "blood_volume"
+     }
+    },
+    {
+     "find": [
+      "診察室又は処置室"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "採血場所",
+      "section": "採血・製造・投与の場所",
+      "occ": 1
+     },
+     "file_contains": "",
+     "desc": "採血・投与場所"
+    },
+    {
+     "find": [
+      "クリーンブース",
+      "クリーンベンチ"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "クリーンベンチ又はクリーンブース（右記タブより選択）",
+      "occ": 1
+     },
+     "file_contains": "",
+     "desc": "準備品(ベンチ/ブース)"
+    }
+   ]
+  },
+  "3種筋腱靭帯系PRP": {
+   "folder": "3種筋腱靭帯系PRP",
+   "excel": {
+    "file": "01.【様式第一の二】 再生医療等提供計画 (治療) 整形外科(・三種）.xlsx",
+    "sheet": "1 の２提供計画（治療）",
+    "entries": [
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N11",
+      "var": "医療機関_名称",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N14",
+      "var": "医療機関_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "N17",
+      "var": "管理者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "開設者（診療所開設届上）※医療法人の場合",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:法人=役職+氏名/個人=氏名のみ"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L27",
+      "var": "再生医療等_名称",
+      "source": {
+       "t": "hearing",
+       "label": "再生医療②（右記タブから選択）",
+       "section": "再生医療の名称",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "2種=再生医療①/3種=再生医療②"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L42",
+      "var": "実施責任者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "氏名",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L43",
+      "var": "実施責任者_所属機関",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L44",
+      "var": "実施責任者_所属部署",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:部署欄なし→医療機関名で代用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L45",
+      "var": "実施責任者_郵便番号",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/郵便番号（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "postal",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L46",
+      "var": "実施責任者_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L47",
+      "var": "実施責任者_電話",
+      "source": {
+       "t": "hearing",
+       "label": "電話番号",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L48",
+      "var": "実施責任者_メール",
+      "source": {
+       "t": "hearing",
+       "label": "メールアドレス",
+       "section": "実施責任者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L49",
+      "var": "事務担当者_氏名",
+      "source": {
+       "t": "hearing",
+       "label": "氏名",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L50",
+      "var": "事務担当者_所属機関",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L51",
+      "var": "事務担当者_所属部署",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/名称（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": "確認対象:部署欄なし→医療機関名で代用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L52",
+      "var": "事務担当者_郵便番号",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/郵便番号（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "postal",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L53",
+      "var": "事務担当者_住所",
+      "source": {
+       "t": "hearing",
+       "label": "医療機関/住所（診療所開設届上）",
+       "section": "法人/医療機関",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L54",
+      "var": "事務担当者_電話",
+      "source": {
+       "t": "hearing",
+       "label": "電話番号",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L55",
+      "var": "事務担当者_FAX",
+      "source": {
+       "t": "unknown"
+      },
+      "tf": "text",
+      "note": "確認対象:ヒアリングにFAX欄なし"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L56",
+      "var": "事務担当者_メール",
+      "source": {
+       "t": "hearing",
+       "label": "メールアドレス",
+       "section": "事務担当者",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L66",
+      "var": "救急_設備内容",
+      "source": {
+       "t": "hearing",
+       "label": "救急医療に必要な施設又は設備の確認",
+       "section": "救急対応",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L92",
+      "var": "加工方法",
+      "source": {
+       "t": "kit",
+       "part": "加工",
+       "idx": 0,
+       "numbered": true
+      },
+      "tf": "text",
+      "note": "確認対象:PRPキット→加工方法を①②③で連番連結"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L95",
+      "var": "投与方法",
+      "source": {
+       "t": "kit",
+       "part": "投与",
+       "idx": 1
+      },
+      "tf": "text",
+      "note": "確認対象:PRPメーカーE列(投与方法)。複数キットでも共通のため先頭キット採用"
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L97",
+      "var": "製造事業者_名称",
+      "source": {
+       "t": "hearing",
+       "label": "特定細胞加工物製造事業者の名称",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L98",
+      "var": "加工施設_施設番号",
+      "source": {
+       "t": "hearing",
+       "label": "施設番号",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L99",
+      "var": "加工施設_名称",
+      "source": {
+       "t": "hearing",
+       "label": "細胞培養加工施設の名称",
+       "section": "細胞加工施設",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L152",
+      "var": "委員会_名称",
+      "source": {
+       "t": "hearing",
+       "label": "認定再生医療等委員会の名称",
+       "section": "審査委員会",
+       "occ": 1
+      },
+      "tf": "text",
+      "note": ""
+     },
+     {
+      "sheet": "1 の２提供計画（治療）",
+      "cell": "L153",
+      "var": "委員会_認定番号",
+      "source": {
+       "t": "committee"
+      },
+      "tf": "text",
+      "note": "委員会名→審査委員会シートで番号取得"
+     }
+    ],
+    "doctor_fill": {
+     "block_label": "再生医療等を行う医師又は歯科医師",
+     "col": 12,
+     "name_offset": 1,
+     "affil_offset": 2,
+     "max": 15
+    },
+    "cell_edits": [
+     {
+      "cell": "L83",
+      "op": "replace_from",
+      "marker": "①Condensia",
+      "source": {
+       "t": "kit",
+       "part": "採取",
+       "mode": "block",
+       "numbered": true
+      },
+      "desc": "採取方法(選択キット)"
+     },
+     {
+      "cell": "L146",
+      "op": "replace_find",
+      "find": [
+       "〇〇医師会医賠償責任保険",
+       "秦野伊勢原医師会医賠償責任保険"
+      ],
+      "source": {
+       "t": "hearing",
+       "label": "健康被害を補償・カバーする加入保険名称",
+       "section": "救急対応"
+      },
+      "desc": "保険名称"
+     },
+     {
+      "cell": "L149",
+      "op": "replace_find",
+      "find": [
+       "〇〇医師会医賠償責任保険",
+       "秦野伊勢原医師会医賠償責任保険"
+      ],
+      "source": {
+       "t": "hearing",
+       "label": "健康被害を補償・カバーする加入保険名称",
+       "section": "救急対応"
+      },
+      "desc": "保険名称"
+     },
+     {
+      "cell": "L165",
+      "op": "replace_from",
+      "marker": "■お問合せ先",
+      "source": {
+       "t": "hearing",
+       "label": "患者からの問い合わせ先",
+       "section": "人員"
+      },
+      "desc": "問い合わせ先"
+     },
+     {
+      "cell": "L35",
+      "op": "replace_find",
+      "find": [
+       "11mL-20mL",
+       "11～20mL"
+      ],
+      "source": {
+       "t": "blood_volume"
+      },
+      "desc": "採血量(範囲)"
+     },
+     {
+      "cell": "L78",
+      "op": "replace_find",
+      "find": [
+       "11mL-20mL",
+       "11～20mL"
+      ],
+      "source": {
+       "t": "blood_volume"
+      },
+      "desc": "採血量(範囲)"
+     },
+     {
+      "cell": "L79",
+      "op": "replace_price",
+      "source": {
+       "t": "kitprice",
+       "saisei": 2
+      },
+      "desc": "治療価格ブロック"
+     }
+    ]
+   },
+   "docx_kit": [
+    {
+     "token": "{{採取方法}}",
+     "source": {
+      "t": "kit",
+      "part": "採取",
+      "mode": "block",
+      "numbered": true
+     }
+    },
+    {
+     "token": "{{加工方法}}",
+     "source": {
+      "t": "kit",
+      "part": "加工",
+      "mode": "block",
+      "numbered": true
+     }
+    },
+    {
+     "token": "{{治療価格}}",
+     "source": {
+      "t": "kitprice",
+      "saisei": 2
+     }
+    },
+    {
+     "token": "{{患者からの問い合わせ先}}",
+     "source": {
+      "t": "hearing",
+      "label": "患者からの問い合わせ先",
+      "occ": 1
+     }
+    }
+   ],
+   "docx_table": [],
+   "docx": [
+    {
+     "desc": "クリニック名",
+     "find": [
+      "さこ整形外科・リハビリテーション科",
+      "さこ・リハビリテーション"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/名称（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "住所",
+     "find": [
+      "神奈川県秦野市大秦町2-16クリエイトエス・ディー秦野大秦町店2F"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/住所（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "郵便番号",
+     "find": [
+      "257-0034"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/郵便番号（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "電話番号",
+     "find": [
+      "0463-59-9901"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "電話番号",
+      "section": "実施責任者"
+     }
+    },
+    {
+     "desc": "メール",
+     "find": [
+      "yamada@abc.com"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "メールアドレス",
+      "section": "実施責任者"
+     }
+    },
+    {
+     "desc": "氏名(開設者/管理者)",
+     "find": [
+      "迫　浩輔",
+      "迫 浩輔",
+      "迫浩輔"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "開設者（診療所開設届上）※医療法人でない場合",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "委員会名",
+     "find": [
+      "JSCSF再生医療等委員会"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "認定再生医療等委員会の名称",
+      "section": "審査委員会"
+     }
+    },
+    {
+     "desc": "認定番号",
+     "find": [
+      "NA8230002"
+     ],
+     "source": {
+      "t": "committee"
+     }
+    },
+    {
+     "desc": "受付番号",
+     "find": [
+      "01C2605012"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "受付番号",
+      "section": "受付番号"
+     }
+    },
+    {
+     "desc": "保険名称",
+     "find": [
+      "〇〇医師会医賠償責任保険",
+      "秦野伊勢原医師会医賠償責任保険",
+      "東日本医師賠償責任保険"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "健康被害を補償・カバーする加入保険名称",
+      "section": "救急対応"
+     }
+    },
+    {
+     "desc": "委員会連絡先名",
+     "find": [
+      "一般社団法人 日本先進医療臨床研究会"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "連絡先名"
+     }
+    },
+    {
+     "desc": "委員会住所",
+     "find": [
+      "〒103-0028 東京都中央区八重洲1-8-17 新槇町ビル6F",
+      "〒103-0028東京都中央区八重洲1-8-17 新槇町ビル6F"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "住所"
+     }
+    },
+    {
+     "desc": "委員会TEL",
+     "find": [
+      "03-5542-1597"
+     ],
+     "source": {
+      "t": "committee",
+      "field": "TEL"
+     }
+    },
+    {
+     "desc": "標準書 作成年月日=作業日",
+     "file_contains": "標準書",
+     "find": [
+      "作成年月日：2026年5月8日",
+      "作成年月日：2026年5月11日"
+     ],
+     "source": {
+      "t": "compose",
+      "lines": [
+       {
+        "prefix": "作成年月日：",
+        "source": {
+         "t": "today",
+         "fmt": "ymd"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "desc": "標準書 施行年月日=作業日",
+     "file_contains": "標準書",
+     "find": [
+      "施行年月日：2026年5月8日",
+      "施行年月日：2026年5月11日"
+     ],
+     "source": {
+      "t": "compose",
+      "lines": [
+       {
+        "prefix": "施行年月日：",
+        "source": {
+         "t": "today",
+         "fmt": "ymd"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "desc": "採血量(総量範囲)",
+     "find": [
+      "11mL-20mL",
+      "11～20mL",
+      "11-20ml",
+      "約11mL-20mL"
+     ],
+     "source": {
+      "t": "blood_volume"
+     }
+    },
+    {
+     "find": [
+      "診察室又は処置室"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "採血場所",
+      "section": "採血・製造・投与の場所",
+      "occ": 1
+     },
+     "file_contains": "",
+     "desc": "採血・投与場所"
+    },
+    {
+     "find": [
+      "クリーンブース",
+      "クリーンベンチ"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "クリーンベンチ又はクリーンブース（右記タブより選択）",
+      "occ": 1
+     },
+     "file_contains": "",
+     "desc": "準備品(ベンチ/ブース)"
+    }
+   ]
+  },
+  "SOP": {
+   "folder": "SOP",
+   "docx": [
+    {
+     "desc": "クリニック名",
+     "find": [
+      "やまだ整形外科クリニック"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "医療機関/名称（診療所開設届上）",
+      "section": "法人/医療機関"
+     }
+    },
+    {
+     "desc": "施設管理者 氏名",
+     "find": [
+      "山田　太郎",
+      "山田 太郎",
+      "山田太郎"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "特定細胞加工物製造事業者の名称",
+      "section": "細胞加工施設"
+     }
+    },
+    {
+     "desc": "日付(年月日)=作業日",
+     "find": [
+      "2026年〇月〇日",
+      "〇年〇月〇日",
+      "〇〇年〇月〇日"
+     ],
+     "source": {
+      "t": "today",
+      "fmt": "ymd"
+     }
+    },
+    {
+     "desc": "日付(スラッシュ)=作業日",
+     "find": [
+      "2026/〇/〇",
+      "〇/〇/〇",
+      "〇〇/〇/〇"
+     ],
+     "source": {
+      "t": "today",
+      "fmt": "slash"
+     }
+    },
+    {
+     "find": [
+      "クリーンブース",
+      "クリーンベンチ"
+     ],
+     "source": {
+      "t": "hearing",
+      "label": "クリーンベンチ又はクリーンブース（右記タブより選択）",
+      "occ": 1
+     },
+     "file_contains": "",
+     "desc": "準備品(ベンチ/ブース)"
+    }
+   ]
+  }
+ }
+}

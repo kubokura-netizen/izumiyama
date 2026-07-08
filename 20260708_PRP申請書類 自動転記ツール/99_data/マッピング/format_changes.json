@@ -1,0 +1,29 @@
+{
+  "_about": "オフライン様式変更対応ファイル。厚労省の様式やヒアリング項目名が変わった際、ここに変更指示を書くと、transcribe.py が転記前に mapping.json を動的に上書きします（コードを直さず追従）。空配列のままなら何も起きません。",
+  "_how_to_use": [
+    "label_renames : ヒアリング項目名(ラベル)が変わったとき。旧→新を書く。",
+    "cell_moves    : 様式変更で出力先セルがずれたとき。文書名・変数名・新セルを書く。",
+    "set_source    : ある変数の転記元そのものを差し替えるとき。",
+    "disable       : 廃止された項目を転記対象から外すとき。"
+  ],
+  "_examples": {
+    "label_renames": [
+      { "old": "医療機関/名称（診療所開設届上）", "new": "医療機関の正式名称" }
+    ],
+    "cell_moves": [
+      { "document": "3種筋腱靭帯系PRP", "var": "医療機関_名称", "new_cell": "N12" }
+    ],
+    "set_source": [
+      { "document": "2種関節系PRP", "var": "管理者_氏名",
+        "source": { "t": "hearing", "label": "開設者（診療所開設届上）※医療法人でない場合", "section": "法人/医療機関", "occ": 1 } }
+    ],
+    "disable": [
+      { "document": "2種関節系PRP", "var": "事務担当者_FAX" }
+    ]
+  },
+
+  "label_renames": [],
+  "cell_moves": [],
+  "set_source": [],
+  "disable": []
+}
