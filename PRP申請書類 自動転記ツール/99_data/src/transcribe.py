@@ -63,7 +63,7 @@ def clean(s):
 
 
 # 連番マーカー（複数キット①②③…/最大15）
-MARKS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮"
+MARKS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
 
 def is_placeholder(v):
@@ -245,23 +245,30 @@ class Hearing:
     #     ヒアリングは「PRPキットメーカー①」ブロックごとに
     #     「再生医療①/②/③（右記タブから選択）の治療費の設定（税別）」を持つ。
     def kit_price_block(self, saisei_idx, joiner="\n"):
-        kits = self.prp_kits()
-        if not kits:
-            return ""
-        mark_s = MARKS[saisei_idx - 1] if 1 <= saisei_idx <= len(MARKS) else "①"
-        price_label = "再生医療%s（右記タブから選択）の治療費の設定（税別）" % mark_s
-        lines = []
-        for i, k in enumerate(kits):
-            price = self.lookup(price_label, "", i + 1)   # occ=キット番号
-            price = clean(price)
+        # 各キットは「自分の出現番号」のマークで治療費を持つ：
+        #   「再生医療[キット番号]（右記タブから選択）の治療費の設定（税別）」
+        # ヒアリングのキット出現順にマークを対応させ、キット別の料金を列挙する。
+        # （旧実装は saisei_idx 固定マーク＋occ でキット②以降を取りこぼしていた＝A3バグ）
+        kit_vals = [clean(e["value"]) for e in self.entries
+                    if "PRPキットメーカー" in e["label"] and not is_placeholder(e["value"])]
+        lines, seen = [], []
+        for orig_i, kit in enumerate(kit_vals):
+            if not kit:
+                continue
+            name = re.sub(r"\s*（[^（）]*）\s*$", "", kit).strip()   # 末尾の（メーカー名）を除去
+            if name in seen:                                        # 同一キットは1回だけ（連番展開と同じ畳み込み）
+                continue
+            mark_orig = MARKS[orig_i] if orig_i < len(MARKS) else "(%d)" % (orig_i + 1)
+            price_label = "再生医療%s（右記タブから選択）の治療費の設定（税別）" % mark_orig
+            price = clean(self.lookup(price_label, "", 1))          # マークが一意なので occ=1
             if not price or is_placeholder(price):
                 continue
-            name = re.sub(r"\s*（[^（）]*）\s*$", "", clean(k)).strip()   # 末尾の（メーカー名）を除去
-            mark_k = MARKS[i] if i < len(MARKS) else "(%d)" % (i + 1)
-            lines.append("%s%sを用いた治療：%s" % (mark_k, name, price))
+            mark_out = MARKS[len(seen)] if len(seen) < len(MARKS) else "(%d)" % (len(seen) + 1)
+            seen.append(name)
+            lines.append("%s%sを用いた治療：%s" % (mark_out, name, price))
         return joiner.join(lines)
 
-    # --- 再生医療を行う医師の一覧（雛形値・重複を除外、最大15名）---
+    # --- 再生医療を行う医師の一覧（雛形値・重複を除外、最大20名）---
     #     「再生医療を行う医師…」で始まる人員欄のみ対象（履歴書案内行などは除外）
     def doctors(self):
         names = []
@@ -273,7 +280,7 @@ class Hearing:
             v = clean(e["value"])
             if v and v not in names:
                 names.append(v)
-        return names[:15]
+        return names[:20]
 
 
 # =========================================================================
@@ -590,9 +597,12 @@ def find_hearing():
         return sys.argv[1]
     cands = [c for c in glob.glob(os.path.join(DIR_INPUT, "*.xlsx"))
              if not os.path.basename(c).startswith("~$")]
-    cands.sort(key=os.path.getmtime, reverse=True)
-    if cands:
-        return cands[0]
+    # ヒアリング本体を優先（略歴書など他のExcelが 01_input に混在しても誤選択しない）
+    named = [c for c in cands if "ヒアリング" in os.path.basename(c)]
+    pool = named or [c for c in cands if "略歴" not in os.path.basename(c)] or cands
+    pool.sort(key=os.path.getmtime, reverse=True)
+    if pool:
+        return pool[0]
     raise FileNotFoundError("01_input にヒアリングシート(.xlsx)を入れてください")
 
 

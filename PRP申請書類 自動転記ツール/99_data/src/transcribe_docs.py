@@ -22,6 +22,16 @@ import os, io, json, glob, shutil
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.dirname(SRC_DIR)
 DOCS_CONFIG = os.path.join(DATA, "マッピング", "docs_config.json")
+FURIGANA_MAP = os.path.join(DATA, "マッピング", "ふりがな.json")
+
+
+def _load_furigana():
+    """医療機関名→ルビ（ふりがな）の手入力マップを読む。無ければ空。"""
+    try:
+        d = json.load(io.open(FURIGANA_MAP, encoding="utf-8"))
+        return d.get("読み", {}) if isinstance(d, dict) else {}
+    except Exception:
+        return {}
 
 
 def _clean(s):
@@ -212,10 +222,160 @@ def _write_xlsx_cells_xmlsurgery(xlsx_path, sheet_title, coord_values, run_log):
     os.replace(tmp, xlsx_path)
 
 
-def _fill_xlsx_tokens(ws, hearing, kits, TX, saisei):
+def _resolve_sheet_xml_path(data, names, sheet_title):
+    """workbook.xml/rels から sheet_title に対応するワークシートXMLのパスを返す。"""
+    import re as _re
+    wbxml = data.get("xl/workbook.xml", b"").decode("utf-8", "ignore")
+    relsxml = data.get("xl/_rels/workbook.xml.rels", b"").decode("utf-8", "ignore")
+    rid = None
+    for tag in _re.findall(r"<sheet\b[^>]*/>", wbxml):
+        nm = _re.search(r'name="([^"]*)"', tag)
+        ri = _re.search(r'r:id="([^"]*)"', tag)
+        if nm and ri and nm.group(1) == sheet_title:
+            rid = ri.group(1); break
+    if rid is None:
+        m = _re.search(r'<sheet\b[^>]*r:id="([^"]*)"', wbxml)
+        rid = m.group(1) if m else None
+    if rid:
+        rm = _re.search(r'<Relationship\b[^>]*Id="%s"[^>]*Target="([^"]*)"' % _re.escape(rid), relsxml)
+        if rm:
+            tgt = rm.group(1).lstrip("/")
+            sp = tgt if tgt.startswith("xl/") else "xl/" + tgt
+            if sp in data:
+                return sp
+    cand = [n for n in names if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+    return sorted(cand)[0] if cand else None
+
+
+def _delete_rows_xmlsurgery(xlsx_path, sheet_title, start, count, run_log):
+    """指定シートから連続行 [start, start+count-1] を XML手術で削除（図形・書式・データ検証を保持）。
+       行番号・セル参照を繰り上げ、mergeCells と dimension を更新する。openpyxl は使わない。"""
+    import re as _re
+    import zipfile as _zip
+    if count <= 0:
+        return
+    end = start + count - 1
+    try:
+        z = _zip.ZipFile(xlsx_path, "r")
+        names = z.namelist()
+        data = {n: z.read(n) for n in names}
+        z.close()
+    except Exception as e:
+        run_log.append("[行削除] 読込失敗: %r" % e); return
+    key = _resolve_sheet_xml_path(data, names, sheet_title)
+    if not key:
+        run_log.append("[行削除] シートXML未検出"); return
+    xml = data[key].decode("utf-8")
+
+    m = _re.search(r"(<sheetData>)(.*)(</sheetData>)", xml, _re.S)
+    if not m:
+        run_log.append("[行削除] sheetData未検出"); return
+    head, body, tail = xml[:m.start()], m.group(2), xml[m.end():]
+    out = []
+    for el in _re.findall(r"<row\b[^>]*?(?:/>|>.*?</row>)", body, _re.S):
+        mr = _re.search(r'<row\b[^>]*?\br="(\d+)"', el)
+        if not mr:
+            out.append(el); continue
+        rn = int(mr.group(1))
+        if start <= rn <= end:
+            continue
+        if rn > end:
+            newn = rn - count
+            el = _re.sub(r'(<row\b[^>]*?\br=")%d(")' % rn,
+                         lambda mm: mm.group(1) + str(newn) + mm.group(2), el, count=1)
+            el = _re.sub(r'(r=")([A-Z]+)%d(")' % rn,
+                         lambda mm: mm.group(1) + mm.group(2) + str(newn) + mm.group(3), el)
+        out.append(el)
+    xml = head + "<sheetData>" + "".join(out) + "</sheetData>" + tail
+
+    mm = _re.search(r'<mergeCells count="\d+">(.*?)</mergeCells>', xml, _re.S)
+    if mm:
+        def _rc(c):
+            mo = _re.match(r"([A-Z]+)(\d+)", c); return mo.group(1), int(mo.group(2))
+        newrefs = []
+        for ref in _re.findall(r'<mergeCell ref="([^"]+)"/>', mm.group(1)):
+            has = ":" in ref
+            a, b = ref.split(":") if has else (ref, ref)
+            ca, ra = _rc(a); cb, rb = _rc(b)
+            if start <= ra <= end and start <= rb <= end:
+                continue
+            ra2 = ra - count if ra > end else ra
+            rb2 = rb - count if rb > end else rb
+            newrefs.append("%s%d:%s%d" % (ca, ra2, cb, rb2) if has else "%s%d" % (ca, ra2))
+        xml = xml[:mm.start()] + '<mergeCells count="%d">%s</mergeCells>' % (
+            len(newrefs), "".join('<mergeCell ref="%s"/>' % r for r in newrefs)) + xml[mm.end():]
+
+    dm = _re.search(r'<dimension ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/>', xml)
+    if dm:
+        xml = xml[:dm.start()] + '<dimension ref="%s%s:%s%d"/>' % (
+            dm.group(1), dm.group(2), dm.group(3), int(dm.group(4)) - count) + xml[dm.end():]
+
+    # 手動改ページ（rowBreaks）を行削除に合わせて更新（範囲内は除去、下は -count）
+    rbm = _re.search(r'(<rowBreaks\b[^>]*>)(.*?)(</rowBreaks>)', xml, _re.S)
+    if rbm:
+        newbrks = []
+        for b in _re.findall(r'<brk\b[^>]*/>', rbm.group(2)):
+            im = _re.search(r'\bid="(\d+)"', b)
+            if not im:
+                newbrks.append(b); continue
+            rid = int(im.group(1))
+            if start <= rid <= end:
+                continue                                   # 削除範囲内の改ページは除去
+            if rid > end:
+                b = _re.sub(r'(\bid=")\d+(")', lambda mm: mm.group(1) + str(rid - count) + mm.group(2), b, count=1)
+            newbrks.append(b)
+        hdr = _re.sub(r'\bcount="\d+"', 'count="%d"' % len(newbrks), rbm.group(1))
+        hdr = _re.sub(r'\bmanualBreakCount="\d+"', 'manualBreakCount="%d"' % len(newbrks), hdr)
+        xml = xml[:rbm.start()] + hdr + "".join(newbrks) + rbm.group(3) + xml[rbm.end():]
+
+    data[key] = xml.encode("utf-8")
+    tmp = xlsx_path + ".tmp"
+    zo = _zip.ZipFile(tmp, "w", _zip.ZIP_DEFLATED)
+    try:
+        for n in names:
+            zo.writestr(n, data[n])
+    finally:
+        zo.close()
+    os.replace(tmp, xlsx_path)
+    run_log.append("[行削除] %s の 行%d〜%d (%d行) を削除" % (sheet_title, start, end, count))
+
+
+def _docx_items(docx_path):
+    """説明書docx（4.5等）を「N. 見出し」で項目分割し {N: 本文テキスト} を返す。
+       本文は見出し行の次から次の見出し手前までの段落を改行連結。"""
+    import re as _re
+    try:
+        from docx import Document
+    except Exception:
+        return {}
+    if not docx_path or not os.path.exists(docx_path):
+        return {}
+    try:
+        paras = [_clean(p.text) for p in Document(docx_path).paragraphs]
+    except Exception:
+        return {}
+    heads = {}
+    for i, t in enumerate(paras):
+        m = _re.match(r"^\s*(\d+)[\.．]\s*(.+)", (t or "").strip())
+        if m and len(m.group(2)) < 40:
+            try:
+                heads[int(m.group(1))] = i
+            except ValueError:
+                pass
+    order = sorted(heads)
+    items = {}
+    for k in order:
+        i = heads[k]
+        nxt = min([heads[j] for j in order if heads[j] > i] + [len(paras)])
+        items[k] = "\n".join(t for t in paras[i + 1:nxt] if t and t.strip())
+    return items
+
+
+def _fill_xlsx_tokens(ws, hearing, kits, TX, saisei, doc_items=None):
     """様式xlsxセル内に残る {{項目名}} をヒアリング値で穴埋め（部分セル・旧トークン対応）。
-       特殊トークン（採血量/治療価格/キット製造方法/委員会/場所）を名前で解決し、
-       それ以外は「より→から」等を吸収してヒアリングlabel直接参照でフォールバック。"""
+       特殊トークン（採血量/治療価格/キット製造方法/委員会/場所/4.5本文）を名前で解決し、
+       それ以外は「より→から」等を吸収してヒアリングlabel直接参照でフォールバック。
+       doc_items: 説明書docxの項目辞書 {N: 本文}（{{4.5本文:N}} 用）。"""
     import re as _re
     TOKENRE = _re.compile(r"\{\{([^{}]*)\}\}")
     MARKS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮"
@@ -232,6 +392,13 @@ def _fill_xlsx_tokens(ws, hearing, kits, TX, saisei):
     def _resolve_named(name):
         name = name.strip()
         n2 = name.replace("より", "から")           # 旧表記ゆれ吸収
+        # 4.5等 説明書の項目本文（{{4.5本文:1}} = 説明書の項目1本文）を差込
+        # ※番号は「本文」の後を取る（「4.5」の4を拾わないように）
+        if name.startswith("4.5本文") or name.startswith("4.5 本文") or "説明書本文" in name:
+            m = _re.search(r"本文[^\d]*(\d+)", name)
+            if m and doc_items:
+                return doc_items.get(int(m.group(1)), "")
+            return ""
         if name == "必要な採血量":
             return hearing.blood_volume()
         if name == "治療価格":
@@ -282,6 +449,67 @@ def _fill_xlsx_tokens(ws, hearing, kits, TX, saisei):
     return n
 
 
+def _doctor_token_value(hearing, token_name):
+    """docx の医師トークン（例: {{再生医療を行う医師の役職・氏名; 氏名1}}）を
+       「接尾の番号 N の医師」1人分に解決する。氏名N→N人目の氏名 / 役職N→N人目の役職。
+       番号なしは1人目。ヒアリング値は「役職　氏名」（全角空白区切り）。該当なしは ''。"""
+    import re as _re
+    suffix = _re.split(r"[;:；：]", token_name)[-1] if _re.search(r"[;:；：]", token_name) else token_name
+    mnum = _re.search(r"(\d+)", suffix)
+    idx = int(mnum.group(1)) if mnum else 1
+    want_role = ("役職" in suffix) and ("氏名" not in suffix)
+    docs = hearing.doctors()
+    if idx < 1 or idx > len(docs):
+        return ""
+    d = (docs[idx - 1] or "").strip()
+    role, name = "", d
+    if "　" in d:
+        role, name = [s.strip() for s in d.split("　", 1)]
+    return role if want_role else name
+
+
+def _fill_paragraph_multiline_tokens(p, resolved, run_green):
+    """段落内の {{名前}} を resolved[名前] で置換し、値内の改行を <w:br/> で保持したまま
+       段落を作り直す。接頭辞（①等）や前後の定型文は残し、差込値のみ緑にする。
+       文中インラインだが値が複数行のケース（例: ①{{…細胞採取の方法}}）で改行を守る。"""
+    import re as _re
+    TOKEN = _re.compile(r"\{\{([^{}]*)\}\}")
+    full = "".join(r.text for r in p.runs)
+    segs = []          # ("text", 文字列, 緑か) / ("br",)
+    last = 0
+    replaced = False
+    for m in TOKEN.finditer(full):
+        nm = m.group(1).strip()
+        if nm not in resolved:
+            continue
+        if m.start() > last:                       # トークン前の定型テキスト
+            segs.append(("text", full[last:m.start()], False))
+        lines = resolved[nm].split("\n")
+        segs.append(("text", lines[0], True))
+        for ln in lines[1:]:                        # 2行目以降は改行(br)で継ぐ
+            segs.append(("br",))
+            segs.append(("text", ln, True))
+        last = m.end()
+        replaced = True
+    if not replaced:
+        return 0
+    if last < len(full):                            # トークン後の定型テキスト
+        segs.append(("text", full[last:], False))
+    for r in list(p.runs):                          # 既存ランを除去して作り直す
+        r._element.getparent().remove(r._element)
+    run = None
+    for seg in segs:
+        if seg[0] == "br":
+            if run is None:
+                run = p.add_run("")
+            run.add_break()
+        else:
+            run = p.add_run(seg[1])
+            if seg[2]:
+                run_green(run)
+    return 1
+
+
 def _fill_all_docx_tokens(d, hearing, kits, saisei, TX, iter_paras):
     """docx内に残る任意の {{項目名}} を汎用リゾルバで穴埋め（前世代トークンの取りこぼし防止）。
        段落全体が単一トークン→複数行(改行br)で差込／文中インライン→ラン置換（1行化）。"""
@@ -293,7 +521,11 @@ def _fill_all_docx_tokens(d, hearing, kits, saisei, TX, iter_paras):
 
     def val_for(nm):
         if nm not in cache:
-            cache[nm] = TX.resolve_token_by_name(nm, hearing, kits, saisei) or ""
+            # 医師の役職・氏名トークンは接尾の番号N の医師1人に解決（xlsxは doctor_fill が個別処理）
+            if "再生医療を行う医師" in nm and ("氏名" in nm or "役職" in nm):
+                cache[nm] = _doctor_token_value(hearing, nm)
+            else:
+                cache[nm] = TX.resolve_token_by_name(nm, hearing, kits, saisei) or ""
         return cache[nm]
 
     n = 0
@@ -313,13 +545,79 @@ def _fill_all_docx_tokens(d, hearing, kits, saisei, TX, iter_paras):
                 run.add_break(); run = p.add_run(ln); _run_green(run)
             n += 1
         else:
-            pairs = []
+            resolved = {}
             for nm in set(x.strip() for x in TOKEN.findall(p.text)):
                 v = val_for(nm)
                 if v != "":
-                    pairs.append(("{{%s}}" % nm, v.replace("\n", " ")))
-            if pairs:
+                    resolved[nm] = v
+            if not resolved:
+                continue
+            if any("\n" in v for v in resolved.values()):
+                # 値が複数行（例: ①{{…細胞採取の方法}}）→ 改行を<w:br/>で保持して再構築
+                n += _fill_paragraph_multiline_tokens(p, resolved, _run_green)
+            else:
+                pairs = [("{{%s}}" % nm, v) for nm, v in resolved.items()]
                 n += _replace_in_paragraph(p, pairs)
+    return n
+
+
+def _run_sz_halfpts(r_el, default=36):
+    """ラン要素の rPr から文字サイズ（ハーフポイント）を取得。無ければ default。"""
+    from docx.oxml.ns import qn
+    rpr = r_el.find(qn("w:rPr"))
+    if rpr is not None:
+        sz = rpr.find(qn("w:sz"))
+        if sz is not None and sz.get(qn("w:val")):
+            try:
+                return int(sz.get(qn("w:val")))
+            except ValueError:
+                pass
+    return default
+
+
+def _build_ruby_run(base, reading, sz, color):
+    """ルビ入りラン <w:r><w:ruby>…</w:ruby></w:r> を生成して返す（本文=base／ルビ=reading）。
+       sz は本文サイズ（ハーフポイント）。ルビは約半分。色は本文・ルビ共通で付与。"""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    ruby_sz = max(10, int(round(sz * 24.0 / 52.0)))     # 既存ルビ(base52/ルビ24)の比率に合わせる
+    raise_v = max(1, int(round(sz * 50.0 / 52.0)))
+    col = '<w:color w:val="%s"/>' % color if color else ""
+    b = _xml_escape(base)
+    r = _xml_escape(reading)
+    xml = (
+        '<w:r %s>' % nsdecls("w") +
+        '<w:rPr>%s<w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>' % (col, sz, sz) +
+        '<w:ruby>'
+        '<w:rubyPr>'
+        '<w:rubyAlign w:val="distributeSpace"/>'
+        '<w:hps w:val="%d"/>' % ruby_sz +
+        '<w:hpsRaise w:val="%d"/>' % raise_v +
+        '<w:hpsBaseText w:val="%d"/>' % sz +
+        '<w:lid w:val="ja-JP"/>'
+        '</w:rubyPr>'
+        '<w:rt><w:r><w:rPr>%s<w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>'
+        '<w:t xml:space="preserve">%s</w:t></w:r></w:rt>' % (col, ruby_sz, ruby_sz, r) +
+        '<w:rubyBase><w:r><w:rPr>%s<w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>'
+        '<w:t xml:space="preserve">%s</w:t></w:r></w:rubyBase>' % (col, sz, sz, b) +
+        '</w:ruby>'
+        '</w:r>'
+    )
+    return parse_xml(xml)
+
+
+def _fill_token_ruby(d, iter_paras, token, base, reading, color="00B050"):
+    """token を含む段落を、base（本文）に reading（ふりがな）を付けたルビ入りランへ置換する。
+       元ランの文字サイズを引き継ぐ。1件でも置換したら件数を返す（0=対象なし）。"""
+    n = 0
+    for p in iter_paras(d):
+        if token not in p.text:
+            continue
+        sz = _run_sz_halfpts(p.runs[0]._element, 36) if p.runs else 36
+        for r in list(p.runs):                       # トークンの既存ランを除去
+            r._element.getparent().remove(r._element)
+        p._p.append(_build_ruby_run(base, reading, sz, color))
+        n += 1
     return n
 
 
@@ -347,6 +645,129 @@ def _clear_doc_tokens(d, iter_paras):
     return n
 
 
+def _rireki_sensei(path):
+    """入力略歴書のファイル名から先生名を取り出す（例 略歴書_大井知泉先生.xlsx → 大井知泉先生）。"""
+    import re as _re
+    b = os.path.splitext(os.path.basename(path))[0]
+    m = _re.search(r"略歴書[_＿](.+)$", b)
+    return m.group(1) if m else b
+
+
+def _fill_one_rireki(inp_path, out_path):
+    """入力略歴書xlsx（A列ラベル/B列値）から出力略歴書xlsx を埋める。
+       学歴/医師免許/職歴 は入力側で混在しうるため内容判定で振り分ける。図形なし前提でopenpyxl保存。"""
+    import openpyxl
+    inws = openpyxl.load_workbook(inp_path, data_only=True).worksheets[0]
+    owb = openpyxl.load_workbook(out_path)
+    ows = owb.worksheets[0]
+    rows = [(_clean(inws.cell(r, 1).value), inws.cell(r, 2).value) for r in range(1, inws.max_row + 1)]
+    allb = [b for a, b in rows if b not in (None, "")]
+
+    def by_label(*keys):
+        for a, b in rows:
+            if a and any(k in a for k in keys) and b not in (None, ""):
+                return b
+        return None
+
+    def containing(*keys):
+        for b in allb:
+            if any(k in _clean(b) for k in keys):
+                return b
+        return None
+
+    menkyo = containing("医籍番号", "免許取得日")
+    gs = by_label("医師免許", "職歴")        # 学歴+職歴が混在しうる入力ブロック
+    gakureki = shokureki = None
+    if gs:
+        lines = [l for l in _clean(gs).split("\n") if l.strip()]
+        g = [l for l in lines if ("大学" in l and "卒" in l)]
+        s = [l for l in lines if not ("大学" in l and "卒" in l)]
+        gakureki = "\n".join(g) if g else None
+        shokureki = "\n".join(s) if s else None
+    furi = name = None
+    for i, (a, b) in enumerate(rows):
+        if a and "氏名" in a:
+            furi = b
+            if i + 1 < len(rows):
+                name = rows[i + 1][1]
+            break
+
+    def setc(row, val):
+        if val not in (None, ""):
+            ows.cell(row, 2).value = val
+            return 1
+        return 0
+
+    filled = 0
+    tr = 1
+    while tr <= ows.max_row:
+        lab = _clean(ows.cell(tr, 1).value)
+        if lab.startswith("氏名"):
+            filled += setc(tr, furi); filled += setc(tr + 1, name)
+        elif "生年月日" in lab:
+            filled += setc(tr, by_label("生年月日"))
+        elif lab.startswith("所属") and "学会" not in lab:
+            filled += setc(tr, by_label("所属"))
+        elif "役職" in lab:
+            filled += setc(tr, by_label("役職"))
+        elif "学歴" in lab:
+            filled += setc(tr, gakureki)
+        elif "医師免許" in lab:
+            filled += setc(tr, menkyo)
+        elif lab == "職歴":
+            filled += setc(tr, shokureki)
+        elif "専門分野" in lab:
+            filled += setc(tr, by_label("専門分野"))
+        elif "所属学会" in lab:
+            filled += setc(tr, by_label("所属学会"))
+        elif "認定医" in lab or "資格" in lab:
+            filled += setc(tr, by_label("認定医", "資格"))
+        elif "臨床経験" in lab:
+            idx = None
+            for i, (a, b) in enumerate(rows):
+                if a and "臨床経験" in a:
+                    idx = i; break
+            if idx is not None:
+                vals = [b for (a, b) in rows[idx:] if b not in (None, "")]
+                for k, v in enumerate(vals):
+                    filled += setc(tr + k, v)
+        tr += 1
+    owb.save(out_path)
+    return filled
+
+
+def _generate_rireki_outputs(out_folder, input_dir, run_log):
+    """出力フォルダの略歴書テンプレ（3.医師略歴書*.xlsx）を、01_inputの各略歴書ごとに埋めて出力。
+       入力ファイル数ぶんの 3.医師略歴書_<先生名>.xlsx を生成し、未充填のテンプレ複製は削除。"""
+    import shutil as _sh
+    tpls = [f for f in glob.glob(os.path.join(out_folder, "*.xlsx"))
+            if os.path.basename(f).startswith("3.医師略歴書")]
+    if not tpls:
+        return
+    tpl = tpls[0]
+    inputs = [f for f in glob.glob(os.path.join(input_dir, "*.xlsx"))
+              if "略歴" in os.path.basename(f) and not os.path.basename(f).startswith("~$")]
+    if not inputs:
+        return
+    made = []
+    for inp in sorted(inputs):
+        sensei = _rireki_sensei(inp)
+        out = os.path.join(out_folder, "3.医師略歴書_%s.xlsx" % sensei)
+        try:
+            _sh.copyfile(tpl, out)
+            _fill_one_rireki(inp, out)
+            made.append(sensei)
+        except Exception as e:
+            run_log.append("[略歴書] %s の生成失敗: %r" % (sensei, e))
+    # テンプレ複製（自分が作った出力名でなければ）を削除
+    if os.path.basename(tpl) not in ["3.医師略歴書_%s.xlsx" % m for m in made] and os.path.exists(tpl):
+        try:
+            os.remove(tpl)
+        except Exception:
+            pass
+    run_log.append("[略歴書] 医師%d名分を生成: %s" % (len(made), " / ".join(made)))
+
+
 def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
     """フォルダ型テンプレ一式を転記出力。戻り値: (出力フォルダ一覧, log_rows)。"""
     try:
@@ -371,6 +792,7 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
     cfg = json.load(io.open(DOCS_CONFIG, encoding="utf-8"))
 
     kits = hearing.prp_kits()
+    furi = _load_furigana()          # 医療機関名→ルビ（手入力マップ）
     base = os.path.splitext(os.path.basename(hearing_path))[0]
     out_folders = []
     log_rows = []
@@ -432,6 +854,7 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                             n_x_done += 1
                         log_rows.append(TX.make_row(run_dt, doc_key, e, val, st, e.get("note")))
                 # 医師の可変転記（最大N名。B列ラベルで医師ブロックを動的検出し、氏名/所属を順に）
+                doctor_del = None      # 空の医師ブロック（末尾）の削除範囲 (start_row, count)
                 df = exc.get("doctor_fill")
                 if df:
                     from openpyxl.utils import get_column_letter as _gl
@@ -446,21 +869,53 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                     med, _mst = TX.resolve({"t": "hearing",
                                             "label": "医療機関/名称（診療所開設届上）",
                                             "section": "法人/医療機関"}, hearing, kits)
+                    roff = df.get("role_offset")     # 役職欄のオフセット（あれば役職・氏名を分離）
                     for i, dname in enumerate(docs[:maxn]):
                         if i >= len(blocks):
                             run_log.append("[%s] 医師%d名目以降はテンプレの医師ブロック不足で未転記（ブロック追加が必要）"
                                            % (doc_key, i + 1))
                             break
                         br = blocks[i]
+                        # ヒアリングは「役職　氏名」（全角空白区切り）。転記時に分離する。
+                        role, name = "", _clean(dname)
+                        if roff is not None and "　" in name:
+                            role, name = [s.strip() for s in name.split("　", 1)]
                         nc = "%s%d" % (_gl(col), br + noff)
-                        TX.safe_set(ws, nc, dname); written.add(nc)
+                        TX.safe_set(ws, nc, name); written.add(nc)
                         if aoff is not None and med:
                             ac = "%s%d" % (_gl(col), br + int(aoff))
                             TX.safe_set(ws, ac, med); written.add(ac)
+                        if roff is not None and role:
+                            rc = "%s%d" % (_gl(col), br + int(roff))
+                            TX.safe_set(ws, rc, role); written.add(rc)
                         n_x_done += 1
                     if docs:
                         run_log.append("[%s] 医師転記=%d名（テンプレ医師ブロック=%d）"
                                        % (doc_key, min(len(docs), len(blocks)), len(blocks)))
+                    # 空の医師ブロック（末尾）の行を出力から削除する指定（delete_empty:true）
+                    if df.get("delete_empty") and blocks:
+                        nfilled = min(len(docs), len(blocks))
+                        if nfilled < len(blocks):
+                            brows = (blocks[1] - blocks[0]) if len(blocks) > 1 else 4
+                            doctor_del = (blocks[nfilled], (len(blocks) - nfilled) * brows)
+                # チェックボックス選択（ラジオ）：ヒアリング値に一致する選択肢の□を■に
+                #   例) 救急 自施設/他施設 … ヒアリング「他の医療機関」→ 他の医療機関側を■
+                for cbs in exc.get("checkbox_selects", []):
+                    cval, _cst = TX.resolve(cbs.get("source", {}), hearing, kits)
+                    cval = _clean(cval)
+                    on = cbs.get("on", "■")
+                    off = cbs.get("off", "□")
+                    picked = None
+                    for opt in cbs.get("options", []):
+                        m = _clean(opt.get("match", ""))
+                        hit = bool(cval) and (m in cval or cval in m)
+                        mark = on if hit else off
+                        if TX.safe_set(ws, opt["cell"], mark):
+                            written.add(opt["cell"])
+                        if hit:
+                            picked = m
+                    run_log.append("[%s] %s → %s" % (doc_key, cbs.get("desc", "選択"),
+                                                     ("%s を■" % picked) if picked else "該当なし(全て□)"))
                 # セル内の一部だけ置換（保険名称/問い合わせ先/採取方法など。定型文は保持）
                 for ce in exc.get("cell_edits", []):
                     cur = ws[ce["cell"]].value
@@ -512,7 +967,11 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                         green_report.append((doc_key, sheet, coord, ov))
                 # 部分セル・旧トークンの {{…}} をヒアリング値で穴埋め（clear_tokensの前に）
                 _saisei = 2 if "3種" in doc_key else 1
-                _fill_xlsx_tokens(ws, hearing, kits, TX, _saisei)
+                # {{4.5本文:N}} 用に説明書docx（4.5…）の項目本文を抽出（テンプレ側を参照＝最新内容）
+                _exp = glob.glob(os.path.join(tpl_folder, "4.5*.docx")) or \
+                       glob.glob(os.path.join(out_folder, "4.5*.docx"))
+                _doc_items = _docx_items(_exp[0]) if _exp else {}
+                _fill_xlsx_tokens(ws, hearing, kits, TX, _saisei, _doc_items)
                 TX.clear_tokens(wb)   # なお残る未充足 {{…}} を空欄化（例: 3種様式の{{医師2_氏名}}）
                 # 変更セルの差分を算出し、XML手術で書込み（openpyxl保存を避け図形を保持）
                 diff = {}
@@ -526,11 +985,14 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                     run_log.append("[%s] XML手術失敗→openpyxl保存にフォールバック（図形が失われる可能性）: %r"
                                    % (doc_key, e))
                     wb.save(xpath)
+                # 空の医師ブロックの行を出力から削除（値の書込み後・図形保持のXML手術）
+                if doctor_del:
+                    _delete_rows_xmlsurgery(xpath, ws.title, doctor_del[0], doctor_del[1], run_log)
             else:
                 run_log.append("[%s] 様式xlsx無し: %s" % (doc_key, exc["file"]))
 
         # --- 直下の各docx（一括置換） ---
-        n_files = n_repl = n_kit = 0
+        n_files = n_repl = n_kit = n_ruby = 0
         if Document and _replace_in_paragraph:
             pairs = _build_docx_pairs(doc.get("docx", []), hearing, kits, TX)
             # キット製造方法トークン（{{採取方法}}等 → ①②③連番の複数行本文）
@@ -538,6 +1000,17 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
             for kt in doc.get("docx_kit", []):
                 val, _ = TX.resolve(kt.get("source", {}), hearing, kits)
                 kit_tokens.append((kt["token"], val or ""))
+            # ルビ指定（医療機関名などにふりがなを付ける）。読みは手入力マップから引く。
+            ruby_specs = []
+            for rb in doc.get("docx_ruby", []):
+                bval, _ = TX.resolve(rb.get("source", {}), hearing, kits)
+                bval = _clean(bval)
+                reading = _clean(furi.get(bval, ""))
+                if bval and reading:                    # 読み未登録ならルビ無し（通常の穴埋めに任せる）
+                    ruby_specs.append((rb["token"], bval, reading, rb.get("file_contains", "")))
+                elif bval:
+                    run_log.append("[%s] ルビ未登録：「%s」の読みが ふりがな.json に無いためルビ無しで出力"
+                                   % (doc_key, bval))
             for f in sorted(glob.glob(os.path.join(out_folder, "*.docx"))):
                 fbase = os.path.basename(f)
                 if fbase.startswith("~$"):
@@ -548,6 +1021,13 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                     run_log.append("[%s] docx読込失敗 %s: %r" % (doc_key, fbase, ex))
                     continue
                 reset_doc_green_to_black(d)   # テンプレの緑を一旦黒へ（転記箇所だけ後で緑になる）
+                # ルビ付け（通常の穴埋めより先に。トークンをルビ入りランへ置換して以降の置換対象から外す）
+                rc = 0
+                for rtok, rbase, rreading, rfc in ruby_specs:
+                    if rfc and rfc not in fbase:
+                        continue
+                    rc += _fill_token_ruby(d, _iter_all_paragraphs, rtok, rbase, rreading)
+                n_ruby += rc
                 # file_contains 指定があるものは対象ファイルのみに適用
                 simple_pairs = [(fnd, v) for fnd, v, _, fc in pairs if (not fc or fc in fbase)]
                 cnt = kc = 0
@@ -584,7 +1064,7 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                 cnt += _fill_all_docx_tokens(d, hearing, kits, _saisei_d, TX, _iter_all_paragraphs)
                 # 穴埋め後、なお残る未充足 {{...}} を空欄化（トークン方式の後始末）
                 leftover = _clear_doc_tokens(d, _iter_all_paragraphs)
-                if cnt or kc or leftover:
+                if cnt or kc or leftover or rc:
                     d.save(f)
                     n_files += 1
                     n_repl += cnt
@@ -595,10 +1075,13 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                                             {"sheet": "(docx一括置換)", "cell": fnd, "var": desc},
                                             v, TX.ST_DONE, "サンプル値→ヒアリング値"))
 
+        # 医師略歴書：01_input の各略歴書xlsxから 3.医師略歴書_<先生名>.xlsx を医師ごとに生成
+        _generate_rireki_outputs(out_folder, os.path.dirname(hearing_path), run_log)
+
         out_folders.append(out_folder)
-        run_log.append("[%s] 出力フォルダ: %s ／ 様式転記=%d(確認%d) ／ docx置換=%dファイル・%d件 ／ キット差込=%d"
+        run_log.append("[%s] 出力フォルダ: %s ／ 様式転記=%d(確認%d) ／ docx置換=%dファイル・%d件 ／ キット差込=%d ／ ルビ付与=%d"
                        % (doc_key, os.path.basename(out_folder),
-                          n_x_done, n_x_check, n_files, n_repl, n_kit))
+                          n_x_done, n_x_check, n_files, n_repl, n_kit, n_ruby))
 
     # 緑ターゲットだが未転記だったセルをレポート出力（要確認）
     if green_report:
