@@ -5,6 +5,13 @@
 __pycache__/
 *.pyc
 
+# Playwright が生成するブラウザプロファイル（キャッシュ・Cookie等。各PCで自動生成されるため管理しない）
+_web_profile/
+PRP申請書類 自動転記ツール/99_data/_web_profile/
+
+# ダッシュボードのログ生成物（任意で管理する場合は各自調整）
+*.log
+
 # OS
 .DS_Store
 20260708_PRP申請書類 自動転記ツール/02_output【転記済みファイルがここに生成】/2種関節系PRP_PRPヒアリングシート0629/【PRP整形】提供医療機関一覧（２種.pdf
