@@ -100,8 +100,64 @@ DUMP_JS = r"""
 """
 
 
+# チェック/ラジオ/ファイル欄/タブの“構造”を診断するJS（押下対象を特定するため）
+DIAG_JS = r"""
+() => {
+  const vis = (el) => !!(el && (el.offsetWidth||el.offsetHeight||el.getClientRects().length));
+  const cut = (s,n) => (s||'').replace(/\s+/g,' ').trim().slice(0,n);
+  const sel = (el) => el.id ? '#'+el.id : (el.name ? el.tagName.toLowerCase()+'[name="'+el.name+'"]' : el.tagName.toLowerCase());
+  const out = { checks: [], files: [], tabs: [] };
+  // checkbox / radio の構造
+  document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => {
+    const id = el.id||'';
+    const labFor = id ? document.querySelector('label[for="'+CSS.escape(id)+'"]') : null;
+    let anc = el.closest('label');
+    const cs = getComputedStyle(el);
+    out.checks.push({
+      type: el.type, name: el.name||'', id: id, selector: sel(el),
+      checked: el.checked, inputVisible: vis(el), display: cs.display, opacity: cs.opacity,
+      labelFor: !!labFor, labelForVisible: labFor ? vis(labFor) : false,
+      labelForText: labFor ? cut(labFor.innerText, 30) : '',
+      ancestorLabel: !!anc, ancestorLabelVisible: anc ? vis(anc) : false,
+      parentTag: el.parentElement ? el.parentElement.tagName.toLowerCase() : '',
+      parentClass: el.parentElement ? cut(el.parentElement.className, 40) : '',
+      outer: cut(el.outerHTML, 160),
+      parentOuter: el.parentElement ? cut(el.parentElement.outerHTML, 240) : ''
+    });
+  });
+  // ファイル入力（非表示含む）＋アップロードらしき要素
+  document.querySelectorAll('input[type="file"]').forEach(el => {
+    out.files.push({ selector: sel(el), name: el.name||'', id: el.id||'', visible: vis(el),
+                     accept: el.accept||'', multiple: !!el.multiple, outer: cut(el.outerHTML,160),
+                     nearText: cut((el.closest('tr,li,div')||el).innerText, 60) });
+  });
+  document.querySelectorAll('button,a,label,span,div').forEach(el => {
+    const t = (el.innerText||'').trim();
+    if (/ファイル|アップロード|添付|参照|選択/.test(t) && t.length<20 && vis(el)) {
+      out.files.push({ selector: sel(el), name:'(clickable)', id: el.id||'', visible:true,
+                       accept:'', multiple:false, outer: cut(el.outerHTML,120), nearText: t });
+    }
+  });
+  // タブらしき要素
+  document.querySelectorAll('[role="tab"], .tab, li, a, button').forEach(el => {
+    const t = (el.innerText||'').trim();
+    if (/^(申請者情報|項目[1-7]|添付書類)$/.test(t) && vis(el)) {
+      out.tabs.push({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role')||'', text: t,
+                      cls: cut(el.className,40), id: el.id||'', outer: cut(el.outerHTML,140) });
+    }
+  });
+  return out;
+}
+"""
+
+
 def dump_fields(page):
     fields = page.evaluate(DUMP_JS)
+    diag = {}
+    try:
+        diag = page.evaluate(DIAG_JS)
+    except Exception as e:
+        diag = {"error": repr(e)}
     path = os.path.join(LOGDIR, "web_fields_dump.txt")
     with io.open(path, "w", encoding="utf-8") as f:
         f.write("Webフォーム 入力欄ダンプ  (%s)\n" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -113,7 +169,29 @@ def dump_fields(page):
             if fl.get("placeholder"): f.write("     placeholder: %s\n" % fl["placeholder"])
             if fl.get("options"):     f.write("     選択肢(select): %s\n" % fl["options"])
             if fl.get("choices"):     f.write("     選択肢(radio/check): %s\n" % " / ".join([x for x in fl["choices"] if x]))
-    print("→ 入力欄 %d件を出力: %s" % (len(fields), path))
+        # ---- 診断セクション ----
+        f.write("\n\n================ 診断（チェック/ラジオ/ファイル/タブの構造）================\n")
+        f.write("【checkbox/radio 構造】押下対象の特定用\n")
+        for c in diag.get("checks", []):
+            f.write("- %s [%s] name=%s checked=%s\n" % (c.get("selector"), c.get("type"), c.get("name"), c.get("checked")))
+            f.write("    input可視=%s display=%s opacity=%s / labelFor=%s(可視%s)「%s」 / 祖先label=%s(可視%s)\n" % (
+                c.get("inputVisible"), c.get("display"), c.get("opacity"),
+                c.get("labelFor"), c.get("labelForVisible"), c.get("labelForText"),
+                c.get("ancestorLabel"), c.get("ancestorLabelVisible")))
+            f.write("    parent<%s class='%s'>\n" % (c.get("parentTag"), c.get("parentClass")))
+            f.write("    input outer: %s\n" % c.get("outer"))
+            f.write("    parent outer: %s\n" % c.get("parentOuter"))
+        f.write("\n【ファイル入力/アップロード要素】\n")
+        if not diag.get("files"):
+            f.write("  （このタブでは検出なし。添付書類タブを表示してから再ダンプしてください）\n")
+        for x in diag.get("files", []):
+            f.write("- %s visible=%s multiple=%s accept=%s near「%s」\n     %s\n" % (
+                x.get("selector"), x.get("visible"), x.get("multiple"), x.get("accept"), x.get("nearText"), x.get("outer")))
+        f.write("\n【タブ要素】\n")
+        for t in diag.get("tabs", []):
+            f.write("- <%s role='%s' class='%s' id='%s'> 「%s」\n     %s\n" % (
+                t.get("tag"), t.get("role"), t.get("cls"), t.get("id"), t.get("text"), t.get("outer")))
+    print("→ 入力欄 %d件＋診断を出力: %s" % (len(fields), path))
 
 
 import re as _re
@@ -198,25 +276,69 @@ def _docx_section(out_folder, file_contains, heading, until=None):
     return "\n".join(x for x in body if x.strip()).strip()
 
 
+def _read_cells(ws, spec):
+    """様式xlsxから値を読む。spec は次のいずれか：
+         "L130"            … 単一セル
+         "L130:L135"       … セル範囲（非空セルを文書順に改行連結）
+         ["L130","L131"]   … 複数セル指定（順に改行連結）
+       ★ Web長文欄は複数セルにまたがることがあるため、範囲/複数指定で結合できる。"""
+    specs = spec if isinstance(spec, list) else [spec]
+    parts = []
+    for sp in specs:
+        sp = str(sp).strip()
+        if not sp:
+            continue
+        if ":" in sp:                                  # 範囲
+            for row in ws[sp]:
+                for c in row:
+                    v = TX.clean(c.value)
+                    if v:
+                        parts.append(v)
+        else:                                          # 単一
+            v = TX.clean(ws[sp].value)
+            if v:
+                parts.append(v)
+    return "\n".join(parts)
+
+
 def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
     """フィールドの入力値を決める。★出力(アウトプット)を最優先：
-       cell=様式xlsxのセル / docx=出力Wordの見出しセクション。無ければヒアリング(source)。
-       web専用type: pref/addr_body/today(year|month|day)。cell_tf: pref/addr_body でセル値を分割。"""
-    # ① アウトプット様式xlsxのセル優先
-    cell = fld.get("cell")
+       cell/cells=様式xlsxのセル（単一/範囲/複数） / docx=出力Wordの見出しセクション。
+       無ければヒアリング(source)。web専用type: pref/addr_body/today。cell_tf: pref/addr_body/zip。"""
+    # ⓪ choice_from: Excelの■/□マーカーから選択肢を決める（補償の有無 有/無 等）
+    #    書式: "choice_from": { "options": [["有","L148"],["無","R148"]], "marked": "■" }
+    #    → 各[ラベル,セル]を見て、セル値に marked(既定■) を含む最初のラベルを返す。
+    cf = fld.get("choice_from")
+    if cf and out_ws is not None:
+        marked = cf.get("marked", "■")
+        for opt in cf.get("options", []):
+            if not (isinstance(opt, (list, tuple)) and len(opt) >= 2):
+                continue
+            label, cref = opt[0], opt[1]
+            cv = TX.clean(out_ws[cref].value)
+            if cv and marked in cv:
+                return label
+
+    # ① アウトプット様式xlsxのセル優先（単一/範囲/複数セルの結合に対応）
+    cell = fld.get("cell") or fld.get("cells")
     if cell and out_ws is not None:
-        raw = TX.clean(out_ws[cell].value)
         tf = fld.get("cell_tf")
-        if tf in ("pref", "addr_body"):
-            pref, body = _pref_split(raw)
-            if pref or body:
-                return pref if tf == "pref" else body
-        elif tf == "zip":
-            z = raw.lstrip("〒 　").strip()
-            if z:
-                return z
-        elif raw:
-            return raw
+        if tf in ("pref", "addr_body", "zip"):
+            # 住所/郵便番号の分割は単一セル前提（範囲指定時は先頭セルを使用）
+            first = cell[0] if isinstance(cell, list) else str(cell).split(":")[0]
+            raw = TX.clean(out_ws[first].value)
+            if tf in ("pref", "addr_body"):
+                pref, body = _pref_split(raw)
+                if pref or body:
+                    return pref if tf == "pref" else body
+            else:  # zip
+                z = raw.lstrip("〒 　").strip()
+                if z:
+                    return z
+        else:
+            v = _read_cells(out_ws, cell)
+            if v:
+                return v
     # ② アウトプットWordのセクション
     dx = fld.get("docx")
     if dx and out_folder:
@@ -376,6 +498,11 @@ _RADIO_LABEL_JS = (
     " let p=el.closest('label'); if(p) return p.innerText.trim();"
     " let s=el.nextElementSibling; if(s&&s.innerText) return s.innerText.trim();"
     " return el.value||''; }")
+# チェック/ラジオを確実に選択：クリック（トグル）せず checked を直接セットし、input/change を発火。
+# ※ inputのクリックがlabelハンドラに伝播して二重トグル→差し引きゼロになる問題を避けるため。
+_SET_CHECKED_JS = ("(e, v) => { e.checked = v;"
+                   " e.dispatchEvent(new Event('input',  {bubbles:true}));"
+                   " e.dispatchEvent(new Event('change', {bubbles:true})); }")
 _HILITE_JS = "el => { const l=el.closest('label')||el.parentElement; if(l){l.style.outline='2px solid #00B050';} }"
 _HILITE_JS2 = "el => { el.style.outline='2px solid #00B050'; el.style.background='#eaffea'; }"
 
@@ -391,6 +518,34 @@ def _field_display(fld, idx):
     return fld.get("desc") or fld.get("selector") or fld.get("label") or ("field#%d" % idx)
 
 
+def _apply_overflow(item, mapping):
+    """②文字数オーバー対策：値が上限を超えたら記録し、モードに応じて短縮する。
+       上限= フィールドの char_limit → mapping.char_limit_default。未設定なら判定しない。
+       警告閾値= char_warn（上限未満でも注意喚起）。
+       mode= フィールドの overflow_mode → mapping.overflow_mode（report[既定]/truncate）。
+       ※ Webは改行コードも文字数に含めるため、改行込みで数える。"""
+    val = item.get("val")
+    if not isinstance(val, str) or not val:
+        return
+    fld = item["fld"]
+    limit = fld.get("char_limit", mapping.get("char_limit_default"))
+    if not limit:
+        return
+    n = len(val)                                       # 改行込みでカウント（Web仕様に合わせる）
+    item["len"] = n
+    item["limit"] = limit
+    warn = fld.get("char_warn", mapping.get("char_warn_default"))
+    if warn and warn <= n <= limit:
+        item["warn_len"] = True                        # 上限手前（改行増で溢れる恐れ）
+    if n > limit:
+        item["over"] = n - limit
+        mode = fld.get("overflow_mode", mapping.get("overflow_mode", "report"))
+        if mode == "truncate":
+            cut = max(0, limit - 1)
+            item["val"] = val[:cut] + "…"              # 末尾を省略記号にして上限内へ
+            item["truncated"] = True
+
+
 def build_plan(mapping, hearing, kits, out_ws, out_folder):
     """全マッピング欄の入力値を先に解決し、状態付きの作業リストを作る。"""
     plan = []
@@ -400,9 +555,76 @@ def build_plan(mapping, hearing, kits, out_ws, out_folder):
         if not (fld.get("selector") or fld.get("label")):
             continue
         val = _resolve_value(fld, hearing, kits, out_ws, out_folder)
-        plan.append({"idx": idx, "fld": fld, "val": val,
-                     "desc": _field_display(fld, idx), "status": "pending", "error": ""})
+        item = {"idx": idx, "fld": fld, "val": val,
+                "desc": _field_display(fld, idx), "status": "pending", "error": ""}
+        _apply_overflow(item, mapping)
+        plan.append(item)
     return plan
+
+
+def _click_labeled_input(page, el):
+    """checkbox/radio を、対応する“可視ラベル”を実クリックしてON（カスタム装飾UI対応）。
+       ★input直接操作ではフレームワークのstateが更新されず反映されないため、実クリックする。
+       優先: label[for=id] → 祖先label → input可視クリック。
+       可視のクリック対象が無ければ False（＝別タブで未表示→呼び出し側で後回し）。"""
+    idv = ""
+    try:
+        idv = el.get_attribute("id") or ""
+    except Exception:
+        idv = ""
+    if idv:
+        try:
+            lab = page.locator("label[for=\"%s\"]" % idv).first
+            if lab.count() > 0 and lab.is_visible():
+                lab.click()
+                return True
+        except Exception:
+            pass
+    try:                                                # inputを内包する祖先label
+        anc = el.locator("xpath=ancestor::label[1]").first
+        if anc.count() > 0 and anc.is_visible():
+            anc.click()
+            return True
+    except Exception:
+        pass
+    try:                                                # input自体（可視なら実クリック）
+        if el.is_visible():
+            el.click()
+            return True
+    except Exception:
+        pass
+    # ★ここでJSのinput.click()はしない：inputのクリックがlabelハンドラに伝播して
+    #   チェックボックスが二重トグル（差し引きゼロ）になるため。可視ラベルが無い＝別タブなので
+    #   Falseを返し、呼び出し側で「absent」→そのタブが開いた時に可視ラベルを実クリックさせる。
+    return False
+
+
+def _click_tab(page, name):
+    """タブ見出し（項目1〜項目7 等）を名前で開く。開けたら True。"""
+    for role in ("tab", "link", "button"):
+        try:
+            t = page.get_by_role(role, name=name, exact=True)
+            n = t.count()
+        except Exception:
+            n = 0
+        for i in range(n):
+            try:
+                cand = t.nth(i)
+                if cand.is_visible():
+                    cand.click()
+                    return True
+            except Exception:
+                continue
+    try:
+        t = page.get_by_text(name, exact=True)
+        for i in range(min(t.count(), 5)):
+            cand = t.nth(i)
+            if cand.is_visible():
+                cand.click()
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _place_field(page, item):
@@ -420,49 +642,82 @@ def _place_field(page, item):
             radios = page.locator(grp)
             cnt = radios.count()
             if cnt == 0:
-                return "absent"
-            try:
-                if not radios.first.is_visible():
-                    return "absent"                    # 別タブに存在（未表示）→後で
-            except Exception:
-                pass
+                return "absent"                        # このDOMに無い
             choice = fld.get("choice") or val
             if not choice:
                 return "empty"
+            # 対象ラジオを選ぶ（ラベル文言一致 → value一致）
+            target = None
             for i in range(cnt):
                 r = radios.nth(i)
-                lbl = r.evaluate(_RADIO_LABEL_JS)
+                try:
+                    lbl = r.evaluate(_RADIO_LABEL_JS)
+                except Exception:
+                    lbl = ""
                 if choice == (lbl or "").strip() or choice in (lbl or ""):
-                    r.check()
-                    r.evaluate(_HILITE_JS)
-                    return "placed"
-            try:
-                page.locator("%s[value='%s']" % (grp, choice)).first.check()
-                return "placed"
-            except Exception:
+                    target = r
+                    break
+            if target is None:
+                try:
+                    cand = page.locator("%s[value='%s']" % (grp, choice)).first
+                    if cand.count() > 0:
+                        target = cand
+                except Exception:
+                    pass
+            if target is None:
                 return "no-choice"
+            # ★クリックせず checked を直接セット＋change発火（labelハンドラの二重トグル回避）
+            try:
+                target.evaluate(_SET_CHECKED_JS, True)
+            except Exception as ex:
+                item["error"] = repr(ex)
+                return "error"
+            try:
+                return "placed" if target.is_checked() else "error"
+            except Exception:
+                return "placed"
 
         loc = _locate(page, fld)
         if loc is None or loc.count() == 0:
             return "absent"
-        try:
-            if not loc.is_visible():
-                return "absent"                        # 別タブに存在（未表示）→後で
-        except Exception:
-            pass
         if not val:
             return "empty"
         tag = loc.evaluate("el => el.tagName.toLowerCase()")
+        typ = ""
+        try:
+            typ = (loc.get_attribute("type") or "").lower()
+        except Exception:
+            pass
         if tag == "select" or ftype == "select":
             try:
                 loc.select_option(label=val)
             except Exception:
                 loc.select_option(value=val)
-        elif ftype == "checkbox":
-            (loc.check() if str(val) not in ("", "0", "false", "無", "×") else loc.uncheck())
+        elif ftype == "checkbox" or typ == "checkbox":
+            # ★クリック（トグル）ではなく checked を直接セット＋change発火。
+            #   labelへのクリック伝播で二重トグル（差し引きゼロ）になる問題を回避する。
+            want = str(val) not in ("", "0", "false", "無", "×")
+            try:
+                loc.first.evaluate(_SET_CHECKED_JS, want)
+            except Exception as ex:
+                item["error"] = repr(ex)
+                return "error"
+            try:
+                return "placed" if loc.first.is_checked() == want else "error"
+            except Exception:
+                return "placed"
         else:
+            # テキスト/テキストエリアは可視でないと fill できない（別タブなら後で）
+            try:
+                if not loc.is_visible():
+                    return "absent"
+            except Exception:
+                pass
             loc.fill(str(val))
-        loc.evaluate(_HILITE_JS2)
+        try:
+            loc.evaluate(_HILITE_JS2)
+        except Exception:
+            pass
         return "placed"
     except Exception as e:
         item["error"] = repr(e)
@@ -573,6 +828,50 @@ def _collect_site_errors(page, mapping):
     return out
 
 
+def _click_return_to_edit(page):
+    """一時保存の確認ページから「保存データ編集に戻る」で下書きを開く（添付のため）。
+       ※「入力内容確認」等の送信に向かう操作は押さない。"""
+    loc, _text = _find_clickable(page, ("保存データ編集に戻る", "データ編集に戻る", "編集に戻る"))
+    if loc is None:
+        return False
+    try:
+        loc.click()
+        # ★ページ遷移が完了するまで待つ（先走ると添付欄が未ロードのまま探しに行くため）
+        for st in ("domcontentloaded", "load", "networkidle"):
+            try:
+                page.wait_for_load_state(st, timeout=15000)
+            except Exception:
+                pass
+        page.wait_for_timeout(1500)
+        return True
+    except Exception:
+        return False
+
+
+def _extract_receipt(page):
+    """一時保存後の確認ページから 受付番号 と パスワード を抽出する（将来のメール通知用）。
+       戻り値: {"受付番号":..., "パスワード":...}（取れたものだけ）。"""
+    info = {}
+    try:
+        txt = page.evaluate("() => document.body ? document.body.innerText : ''") or ""
+    except Exception:
+        txt = ""
+    # ラベル直後（空白/改行のみ）の英数字を値とする。説明文「受付番号とパスワードで…」には
+    # 助詞「と/で」が挟まるので誤マッチしない。
+    for key in ("受付番号", "パスワード"):
+        m = _re.search(key + r"[\s　:：]*([0-9A-Za-z][0-9A-Za-z\-]{5,})", txt)
+        if m:
+            info[key] = m.group(1)
+    # 受付番号とパスワードが同値になった場合は取り違えの疑い→パスワードは別トークンを再探索
+    if info.get("受付番号") and info.get("受付番号") == info.get("パスワード"):
+        rest = txt.split("パスワード", 1)[-1]
+        for m in _re.finditer(r"([0-9A-Za-z][0-9A-Za-z\-]{5,})", rest):
+            if m.group(1) != info["受付番号"]:
+                info["パスワード"] = m.group(1)
+                break
+    return info
+
+
 def _click_save(page, mapping):
     """一時保存（下書き保存）ボタンをクリック。送信系は押さない。
        戻り値: (clicked:bool, text:str)。"""
@@ -587,6 +886,186 @@ def _click_save(page, mapping):
         return True, text
     except Exception:
         return False, text
+
+
+# 添付書類タブの各行（「ファイル選択」ボタン）と、その行見出し（先頭番号付き文書名）を実行時に発見するJS
+ATTACH_ROWS_JS = r"""
+() => {
+  const cut = (s,n) => (s||'').replace(/\s+/g,' ').trim().slice(0,n);
+  const btns = [...document.querySelectorAll('button,a,label')]
+      .filter(e => /ファイル選択/.test(e.innerText||''));
+  return btns.map((el,i) => {
+    let row = el, head = '';
+    for (let n=0; n<8 && row; n++) {
+      const lines = (row.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);
+      const hit = lines.find(L => /^\d+(\.\d+)?[ 　]/.test(L));   // 「2 提供…」「4.5 …」
+      if (hit) { head = cut(hit, 60); break; }
+      row = row.parentElement;
+    }
+    return { index:i, heading:head };
+  });
+}
+"""
+
+
+def _lead_num(name):
+    m = _re.match(r"\s*([0-9]+(?:\.[0-9]+)?)", (name or "").strip())
+    return m.group(1) if m else ""
+
+
+def _manual_attach_table(out_folder):
+    """添付を手動で行うための対応表（頭の数字＝Webのスロット番号）を返す。"""
+    lines = []
+    if not out_folder:
+        return lines
+    docs = [f for f in glob.glob(os.path.join(out_folder, "*.docx"))
+            if not os.path.basename(f).startswith("~$")]
+    nummap = {}
+    for f in docs:
+        n = _lead_num(os.path.basename(f))
+        if n:
+            nummap.setdefault(n, []).append(f)
+    if not nummap:
+        return lines
+    lines.append("  ―― 手動アップロード対応表（添付書類タブで各スロットに）――")
+    for n in sorted(nummap, key=lambda x: float(x) if x.replace('.', '', 1).isdigit() else 999):
+        for f in sorted(nummap[n]):
+            lines.append("    スロット%s ← %s" % (n, os.path.basename(f)))
+    return lines
+
+
+def _attach_files(page, mapping, out_folder):
+    """④添付書類：実フォームは「ファイル選択」ボタン→OSダイアログ→「アップロード」ボタン方式。
+       各行の見出し先頭番号と、出力フォルダのファイル先頭番号を突き合わせて自動添付する。
+       ※ file_chooser でダイアログにファイルを渡し、行の「アップロード」を押す（送信・申請はしない）。"""
+    _BTN_XPATH = ("xpath=//button[contains(normalize-space(.),'ファイル選択')]"
+                  " | //a[contains(normalize-space(.),'ファイル選択')]"
+                  " | //label[contains(normalize-space(.),'ファイル選択')]"
+                  " | //*[@role='button'][contains(normalize-space(.),'ファイル選択')]")
+    lines = []
+    if not out_folder:
+        return lines
+    lines.append("\n--- ④添付書類（ファイル選択→アップロードを自動化）---")
+    att_tab = mapping.get("attach_tab", "添付書類")
+    # ページ読み込み完了を待ってからタブを開く（先走り防止）
+    for st in ("domcontentloaded", "load", "networkidle"):
+        try:
+            page.wait_for_load_state(st, timeout=15000)
+        except Exception:
+            pass
+    if not _click_tab(page, att_tab):
+        lines.append("  添付書類タブを開けませんでした（タブ名: %s）" % att_tab)
+        return lines
+
+    # 出力フォルダの docx を先頭番号でマップ（2→「2 …」, 3→「3.医師略歴書」, 4.5→「4.5 …」等）
+    docs = [f for f in glob.glob(os.path.join(out_folder, "*.docx"))
+            if not os.path.basename(f).startswith("~$")]
+    nummap = {}
+    for f in docs:
+        n = _lead_num(os.path.basename(f))
+        if n:
+            nummap.setdefault(n, []).append(f)
+
+    # ★「ファイル選択」ボタンのある scope を探す（本体＋iframe）。遅延読み込みのため最大~15秒ポーリング。
+    #   途中で見つからなければ1回リロード＋タブ再クリック（下書き編集ページが未ロードのことがあるため）。
+    scope = None
+    for _try in range(30):
+        for fr in [page] + list(page.frames):
+            try:
+                if fr.locator(_BTN_XPATH).count() > 0:
+                    scope = fr
+                    break
+            except Exception:
+                continue
+        if scope is not None:
+            break
+        if _try == 14:                                   # 中間地点で一度リロードして再試行
+            try:
+                page.reload(wait_until="domcontentloaded")
+                for st in ("load", "networkidle"):
+                    try:
+                        page.wait_for_load_state(st, timeout=12000)
+                    except Exception:
+                        pass
+                _click_tab(page, att_tab)
+                page.wait_for_timeout(1500)
+            except Exception:
+                pass
+        page.wait_for_timeout(500)
+    if scope is None:
+        lines.append("  「ファイル選択」ボタンが見つかりません（frames=%d／~10秒待機後）。" % len(page.frames))
+        # 診断：いま画面に何があるか（タブ状態・関連テキスト・ボタン数）を出す
+        try:
+            diag = page.evaluate(r"""() => {
+              const cut=(s,n)=>(s||'').replace(/\s+/g,' ').trim().slice(0,n);
+              const act=[...document.querySelectorAll('[role=tab]')].filter(e=>/is-active|active|selected/.test(e.className)||e.getAttribute('aria-selected')==='true').map(e=>cut(e.innerText,10));
+              const hasFile=[...document.querySelectorAll('button,a,label,span,div')].filter(e=>/ファイル選択|アップロード|添付/.test(e.innerText||'')).slice(0,8).map(e=>cut(e.innerText,20));
+              const url=location.href, hash=location.hash;
+              return {activeTab:act, related:hasFile, buttons:document.querySelectorAll('button').length, url, hash};
+            }""")
+            lines.append("  診断: activeTab=%s / URL=%s%s / button数=%s"
+                         % (diag.get("activeTab"), diag.get("url"), diag.get("hash"), diag.get("buttons")))
+            lines.append("  診断: ファイル関連テキスト=%s" % diag.get("related"))
+        except Exception as e:
+            lines.append("  診断取得に失敗: %r" % e)
+        # 自動描画されないため、手動アップロード用の対応表を出す（頭の数字＝Webのスロット番号）
+        if nummap:
+            lines.append("  ―― 手動アップロード対応表（添付書類タブで各スロットに）――")
+            for n in sorted(nummap, key=lambda x: (float(x) if x.replace('.', '', 1).isdigit() else 999)):
+                for f in sorted(nummap[n]):
+                    lines.append("    スロット%s ← %s" % (n, os.path.basename(f)))
+        lines.append("  ※ 自動添付は保存後の編集ページでアップロード行が描画されず不可。上記を手動で添付してください。")
+        return lines
+
+    try:
+        rows = scope.evaluate(ATTACH_ROWS_JS)
+    except Exception as e:
+        lines.append("  添付行の取得に失敗: %r" % e)
+        return lines
+    if not rows:
+        lines.append("  「ファイル選択」行の見出しが取得できませんでした")
+        return lines
+
+    btns = scope.locator(_BTN_XPATH)
+    total = btns.count()
+    for r in rows:
+        idx = r.get("index")
+        head = r.get("heading", "")
+        n = _lead_num(head)
+        if not n or idx is None or idx >= total:
+            continue
+        cands = nummap.get(n)
+        if not cands:                                    # 4.5→4 等の緩い一致
+            base = n.split(".")[0]
+            cands = [f for k, v in nummap.items() if k.split(".")[0] == base for f in v]
+        if not cands:
+            lines.append("  - スロット「%s」: 対応ファイル無し（番号%s）" % (head, n))
+            continue
+        f = os.path.abspath(sorted(cands)[0])
+        try:
+            with page.expect_file_chooser(timeout=8000) as fc:
+                btns.nth(idx).click()
+            fc.value.set_files(f)
+            page.wait_for_timeout(700)
+            # 直後に現れる「アップロード」ボタン（可視のもの）を押す
+            up = scope.locator("xpath=//button[contains(normalize-space(.),'アップロード')]"
+                               " | //a[contains(normalize-space(.),'アップロード')]")
+            uploaded = False
+            for j in range(up.count()):
+                try:
+                    if up.nth(j).is_visible():
+                        up.nth(j).click()
+                        uploaded = True
+                        break
+                except Exception:
+                    pass
+            page.wait_for_timeout(1800)
+            lines.append("  - スロット「%s」← %s %s" % (
+                head, os.path.basename(f),
+                "(アップロード済)" if uploaded else "(選択のみ・アップロード未押下)"))
+        except Exception as e:
+            lines.append("  - スロット「%s」: 添付失敗 %r" % (head, repr(e)))
+    return lines
 
 
 def _write_report(lines):
@@ -612,22 +1091,41 @@ def run_auto(page, mapping, hearing, kits):
     max_sections = int(mapping.get("max_sections", 25))
     print("自動一括入力を開始します（%d欄・最大%dタブ）…" % (len(plan), max_sections))
 
-    for sec in range(max_sections):
+    def _fill_pass(label):
         placed_here = 0
         for item in plan:
             if item["status"] == "placed":
                 continue
             st = _place_field(page, item)
             if st == "absent":
-                continue                               # このタブには無い→次タブで再挑戦
-            # 一度でも欄が見つかった時点で状態を確定（placed/empty/no-choice/error）
-            item["status"] = st
+                continue                               # このタブには無い→別タブで再挑戦
+            item["status"] = st                        # placed/empty/no-choice/error は確定
             if st == "placed":
                 placed_here += 1
-        print("  タブ%d: %d欄入力" % (sec + 1, placed_here))
-        if not _click_next(page, mapping):
-            print("  （これ以上「次へ」が無いため、全タブ走査を終了）")
-            break
+        print("  %s: %d欄入力" % (label, placed_here))
+
+    tabs = mapping.get("tabs")
+    if tabs:
+        # ★タブ式フォーム：各タブを順に開いて処理（表示されて初めてチェック等が押せる）
+        _fill_pass("現タブ")
+        for tabname in tabs:
+            if _click_tab(page, tabname):
+                page.wait_for_timeout(500)
+                _fill_pass(tabname)
+            else:
+                print("  （タブ「%s」が見つかりません）" % tabname)
+        # 取りこぼし対策にもう一巡（前タブで未表示だったチェック等を回収）
+        for tabname in tabs:
+            if any(i["status"] not in ("placed", "empty", "no-choice", "error") for i in plan):
+                if _click_tab(page, tabname):
+                    page.wait_for_timeout(300)
+                    _fill_pass(tabname + "(再)")
+    else:
+        for sec in range(max_sections):
+            _fill_pass("タブ%d" % (sec + 1))
+            if not _click_next(page, mapping):
+                print("  （これ以上「次へ」が無いため、全タブ走査を終了）")
+                break
 
     # ---- レポート集計 ----
     placed = [i for i in plan if i["status"] == "placed"]
@@ -661,7 +1159,57 @@ def run_auto(page, mapping, hearing, kits):
         for i in errored:
             R.append("  - %s  %s" % (i["desc"], i["error"]))
 
-    # ---- 一時保存 ----
+    # ---- チェック/ラジオの実状態を検証（本当に選択されたか）★JSで el.checked を直接読む（確実）----
+    chk_targets = [(i, (i["fld"].get("selector") or "").strip())
+                   for i in plan
+                   if (i["fld"].get("type") or "").lower() in ("checkbox", "radio")
+                   and (i["fld"].get("selector") or "").strip()]
+    states = []
+    try:
+        states = page.evaluate(
+            "(sels) => sels.map(s => { let els=[]; try{els=document.querySelectorAll(s);}catch(e){return {err:1};}"
+            " let found=els.length>0, on=false; els.forEach(e=>{ if(e.checked) on=true; });"
+            " return {found, on}; })",
+            [s for _, s in chk_targets])
+    except Exception:
+        states = []
+    chk_lines = []
+    for (i, sel), st in zip(chk_targets, states or []):
+        fld = i["fld"]
+        ft = (fld.get("type") or "").lower()
+        if not isinstance(st, dict) or st.get("err"):
+            mark = "?確認不可"
+        elif not st.get("found"):
+            mark = "×欄なし"
+        else:
+            mark = "☑選択OK" if st.get("on") else "☐未選択"
+        if ft == "checkbox":
+            chk_lines.append("  %s  %s" % (mark, i["desc"]))
+        else:
+            chk_lines.append("  %s  %s → %s" % (mark, i["desc"], fld.get("choice") or i["val"]))
+    if chk_lines:
+        R.append("\n【チェック/ラジオ 実状態】← ☐未選択があれば画面で手直し")
+        R.extend(chk_lines)
+
+    # ---- ②文字数オーバー／注意 ----
+    over = [i for i in plan if i.get("over")]
+    trunc = [i for i in plan if i.get("truncated")]
+    warns = [i for i in plan if i.get("warn_len") and not i.get("over")]
+    if over:
+        R.append("\n【文字数オーバー】← Web上限超過（改行込みで計上）")
+        for i in over:
+            tag = "→自動短縮で%d字に収めました" % i["limit"] if i.get("truncated") \
+                  else "→未短縮（overflow_mode=report）"
+            R.append("  - %s  %d字 / 上限%d字（%d字超過） %s"
+                     % (i["desc"], i["len"], i["limit"], i["over"], tag))
+    if warns:
+        R.append("\n【文字数 注意】← 上限手前（改行が増えると溢れる恐れ）")
+        for i in warns:
+            R.append("  - %s  %d字 / 上限%d字" % (i["desc"], i["len"], i["limit"]))
+    if trunc:
+        R.append("※ 自動短縮した欄は、削られた内容が無いか必ず原文と照合してください。")
+
+    # ---- 一時保存 ----（★添付はこの保存後に実施：サイト仕様「一時保存後に添付可能」）
     R.append("\n--- 一時保存（下書き保存）---")
     url_before = page.url
     clicked, btn_text = _click_save(page, mapping)
@@ -682,6 +1230,38 @@ def run_auto(page, mapping, hearing, kits):
         R.append("サイトの検証エラーは検出されませんでした（%s）。"
                  % ("保存後に画面遷移あり" if moved else "画面遷移なし"))
         R.append("→ 一時保存された可能性が高いですが、画面表示を必ずご確認ください。")
+
+    # ---- 受付番号・パスワードの抽出（保存確認ページから）----
+    if clicked:
+        page.wait_for_timeout(800)
+        receipt = _extract_receipt(page)
+        if receipt:
+            R.append("\n★ 一時保存の受付情報（再編集・状況確認に必要。大切に保管）:")
+            for k in ("受付番号", "パスワード"):
+                if receipt.get(k):
+                    R.append("   %s: %s" % (k, receipt[k]))
+            print("★ 受付番号: %s / パスワード: %s"
+                  % (receipt.get("受付番号", "?"), receipt.get("パスワード", "?")))
+
+    # ---- ④添付書類（★一時保存後にのみ可能：編集に戻る→添付→再保存）----
+    if clicked and mapping.get("attach_enabled"):
+        R.append("\n--- ④添付書類（一時保存後フロー）---")
+        if _click_return_to_edit(page):
+            R.append("「保存データ編集に戻る」で下書きを開きました。")
+            page.wait_for_timeout(1200)
+            R.extend(_attach_files(page, mapping, out_folder))
+            page.wait_for_timeout(500)
+            clicked2, _ = _click_save(page, mapping)   # 添付を保存するため再度一時保存
+            page.wait_for_timeout(1000)
+            R.append("添付後、再度一時保存しました。" if clicked2
+                     else "※ 添付後の一時保存ボタンが見つかりませんでした。手動で保存してください。")
+        else:
+            R.append("「保存データ編集に戻る」ボタンが見つかりませんでした。")
+    elif not mapping.get("attach_enabled"):
+        R.append("\n--- ④添付書類（手動）---")
+        R.append("  ※ 一時保存後、画面の「保存データ編集に戻る」→「添付書類」タブで下記を添付してください。")
+        R.append("    （自動添付は保存後の編集ページでアップロード行が自動描画されず不可のため手動運用）")
+        R.extend(_manual_attach_table(out_folder))
 
     # ---- スクリーンショット＆レポート保存 ----
     shot = ""
