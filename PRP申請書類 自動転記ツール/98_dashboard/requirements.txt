@@ -1,0 +1,8 @@
+flask>=3.0
+openpyxl>=3.1
+python-docx>=1.1
+
+# WEB転記（e-再生医療フォームへの自動入力）を使う場合のみ必要。
+# ダッシュボード画面の「準備を実行（初回のみ）」ボタンからでも導入できます。
+#   pip install playwright && playwright install chromium
+# playwright>=1.40
