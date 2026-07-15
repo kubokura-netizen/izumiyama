@@ -18,14 +18,16 @@ echo.
 echo ============================================================
 echo   Web Auto-Fill Tool  (e-Saisei / plan01)
 echo ============================================================
-echo   1 : Auto-fill      (open browser -^> show form -^> fill)
-echo   2 : Dump fields    (--dump / to build the mapping)
-echo   3 : Setup          (install Playwright, first time only)
+echo   1 : Auto-fill (step)  (fill per tab, press Enter between tabs)
+echo   A : Auto-fill (bulk)  (all tabs at once -^> temp-save) *never submits*
+echo   2 : Dump fields       (--dump / to build the mapping)
+echo   3 : Setup             (install Playwright, first time only)
 echo   Q : Quit
 echo ------------------------------------------------------------
 set "sel="
-set /p "sel=Type 1/2/3/Q and press Enter: "
+set /p "sel=Type 1/A/2/3/Q and press Enter: "
 if /i "%sel%"=="1" goto fill
+if /i "%sel%"=="A" goto autofill
 if /i "%sel%"=="2" goto dump
 if /i "%sel%"=="3" goto setup
 if /i "%sel%"=="Q" goto end
@@ -33,10 +35,19 @@ goto menu
 
 :fill
 echo.
-echo [Auto-fill] A browser opens (no login needed). Show the plan01 form,
+echo [Auto-fill step] A browser opens (no login needed). Show the plan01 form,
 echo             then come back here and press Enter.
 echo             Source = OUTPUT (02_output) first. Never submits.
 "%PY%" "%~dp099_data\src\web_fill.py"
+goto done
+
+:autofill
+echo.
+echo [Auto-fill BULK] A browser opens. Show the FIRST tab of plan01, press Enter.
+echo             The tool fills ALL tabs automatically, then clicks TEMP-SAVE.
+echo             If a required field is missing it stops and reports where.
+echo             It NEVER clicks submit/apply. Report: 03_logs\web_autofill_report_*.txt
+"%PY%" "%~dp099_data\src\web_fill.py" --auto
 goto done
 
 :dump

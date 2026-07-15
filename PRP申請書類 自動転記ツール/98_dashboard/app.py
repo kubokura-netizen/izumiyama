@@ -371,9 +371,11 @@ def _child_env():
 @app.get("/api/web/start")
 def api_web_start():
     """web_fill.py を起動し、ブラウザを開いて自動入力の対話を開始。進捗をSSEで流す。
-       mode=fill: 通常の自動入力 / mode=dump: フォーム項目の抽出（メンテ用）。"""
+       mode=fill: タブごと手動送りの自動入力 / mode=auto: 全タブ一括入力→一時保存まで自動 /
+       mode=dump: フォーム項目の抽出（メンテ用）。いずれも送信はしない。"""
     mode = request.args.get("mode", "fill")
-    args = [sys.executable, WEB_FILL] + (["--dump"] if mode == "dump" else [])
+    flag = {"dump": ["--dump"], "auto": ["--auto"]}.get(mode, [])
+    args = [sys.executable, WEB_FILL] + flag
 
     @stream_with_context
     def generate():

@@ -196,7 +196,9 @@ INDEX_HTML = r"""<!doctype html>
       ボタンでブラウザが開きます。<b>ログインと画面遷移はご自身で操作</b>し、対象フォームを表示したら
       「このページに自動入力」を押すと、生成済みの書類（<code>02_output</code>）の内容が各欄に入力されます。
       <b>送信はしません</b>（最終確認と送信は必ず人が行ってください）。複数ページのフォームは、次の画面を表示して
-      もう一度「自動入力」を押せば続けて入力できます。
+      もう一度「自動入力」を押せば続けて入力できます。<br>
+      <b>🚀 一括モード</b>：先頭タブを表示して「一括入力→一時保存」を押すと、<b>全タブを自動で送りながら入力し、最後に一時保存（下書き保存）まで自動</b>で行います。
+      不備で止まった場合は、どの欄・どのメッセージで止まったかをレポート表示します（<b>送信は絶対にしません</b>）。
     </div>
 
     <!-- Playwright 未導入のときの案内 -->
@@ -209,7 +211,8 @@ INDEX_HTML = r"""<!doctype html>
     <div id="webHint" class="muted" style="margin-bottom:12px"></div>
 
     <div class="run-row" id="webControls">
-      <button class="btn" id="webStart">🌐 ブラウザを開いて開始</button>
+      <button class="btn" id="webStart">🌐 ブラウザを開いて開始（タブごと）</button>
+      <button class="btn" id="webAuto">🚀 一括入力→一時保存</button>
       <button class="btn ghost" id="webFill" disabled>⬇ このページに自動入力</button>
       <button class="btn ghost" id="webQuit" disabled>✔ 終了</button>
       <button class="btn ghost sm" id="webStop" disabled>⏹ 強制停止</button>
@@ -407,18 +410,21 @@ function webLog(text,cls){
   d.textContent=text; c.appendChild(d); c.scrollTop=c.scrollHeight;
 }
 function webLineClass(line){
-  if(/エラー|異常|失敗|見つかりません|未導入|未選択/.test(line)) return "err";
-  if(/未検出|確認|注意|推奨|スキップ/.test(line)) return "warn";
-  if(/入力:|選択|出力:|完了|合計/.test(line)) return "ok";
+  if(/エラー|異常|失敗|見つかりません|見つからない|未導入|未選択|不備|止まって/.test(line)) return "err";
+  if(/未検出|未入力|確認|注意|推奨|スキップ/.test(line)) return "warn";
+  if(/入力:|選択|出力:|完了|合計|入力できた|クリックしました|レポートを保存/.test(line)) return "ok";
   return "";
 }
 function webSetControls(){
   $("#webStart").disabled = webRunning;
+  $("#webAuto").disabled  = webRunning;
   $("#webFill").disabled  = !webRunning;
   $("#webQuit").disabled  = !webRunning;
   $("#webStop").disabled  = !webRunning;
   $("#webDump").disabled  = webRunning;
-  $("#webFill").textContent = (webMode==="dump") ? "📋 抽出を実行" : "⬇ このページに自動入力";
+  $("#webFill").textContent = (webMode==="dump") ? "📋 抽出を実行"
+    : (webMode==="auto") ? "▶ 一括入力を実行（先頭タブで押す）"
+    : "⬇ このページに自動入力";
 }
 
 async function webRefreshStatus(){
@@ -450,6 +456,8 @@ function webStartSession(mode){
   webEs.addEventListener("ready", ()=>{
     $("#webState").textContent = (mode==="dump")
       ? "ブラウザで対象フォームを表示し、「抽出を実行」を押してください。"
+      : (mode==="auto")
+      ? "ブラウザでplan01の先頭タブを表示し、「一括入力を実行」を押してください（全タブ自動→一時保存）。"
       : "ブラウザでログイン→対象フォームを表示し、「このページに自動入力」を押してください。";
   });
   webEs.addEventListener("log", e=>{
@@ -477,7 +485,9 @@ async function webSend(cmd){
     const r=await fetch("/api/web/send",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({cmd})});
     if(!r.ok){ const j=await r.json().catch(()=>({})); toast(j.error||"送信に失敗しました"); }
-    else if(cmd==="fill") toast("このページに自動入力しました（内容をご確認ください）");
+    else if(cmd==="fill") toast(webMode==="auto"
+      ? "一括入力→一時保存を実行中です（レポートをご確認ください）"
+      : "このページに自動入力しました（内容をご確認ください）");
   }catch(_){ toast("送信に失敗しました"); }
 }
 async function webStopHard(){
@@ -501,6 +511,7 @@ function webSetup(){
 }
 
 $("#webStart").onclick=()=>webStartSession("fill");
+$("#webAuto").onclick =()=>webStartSession("auto");
 $("#webFill").onclick =()=>webSend("fill");
 $("#webQuit").onclick =()=>webSend("quit");
 $("#webStop").onclick =webStopHard;

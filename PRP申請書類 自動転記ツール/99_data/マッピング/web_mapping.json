@@ -5,6 +5,13 @@
   "output_folder_contains": "2種関節系PRP",
   "output_sheet": "1 の２提供計画（治療）",
   "saisei": 1,
+
+  "_about_auto": "★--auto(自動一括+一時保存)用の設定。空なら文言(次へ/一時保存)で自動探索。うまく進まない/保存できない時だけ、--dumpや画面のHTMLからselectorを入れる。送信/申請/提出/確定を含むボタンは自動では絶対に押さない安全ガードあり。",
+  "next_selector": "",
+  "save_selector": "",
+  "error_selector": "",
+  "max_sections": 25,
+
   "fields": [
     { "desc": "提出日 年", "selector": "#PlanEntrydateYear", "type": "select", "source": { "t": "today", "fmt": "year" } },
     { "desc": "提出日 月", "selector": "#PlanEntrydateMonth", "type": "select", "source": { "t": "today", "fmt": "month" } },

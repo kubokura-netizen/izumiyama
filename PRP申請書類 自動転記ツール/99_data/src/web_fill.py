@@ -364,8 +364,346 @@ def fill_fields(page, mapping, hearing, kits):
     print("\n合計 %d件を入力しました。最終確認のうえ、画面から送信してください。" % total)
 
 
+# ============================================================
+#  自動一括モード（--auto）：全タブを自動送り→全欄入力→一時保存→不備レポート
+#   ・送信/申請/提出/確定 は絶対に押しません（一時保存のみ許可）。
+#   ・不備で止まった場合、どの欄・どのメッセージで止まったかを報告します。
+# ============================================================
+
+# ラジオの選択肢ラベル文言を取るJS（fill_one_page と同じ規則）
+_RADIO_LABEL_JS = (
+    "el => { if(el.id){const l=document.querySelector('label[for=\"'+el.id+'\"]'); if(l) return l.innerText.trim();}"
+    " let p=el.closest('label'); if(p) return p.innerText.trim();"
+    " let s=el.nextElementSibling; if(s&&s.innerText) return s.innerText.trim();"
+    " return el.value||''; }")
+_HILITE_JS = "el => { const l=el.closest('label')||el.parentElement; if(l){l.style.outline='2px solid #00B050';} }"
+_HILITE_JS2 = "el => { el.style.outline='2px solid #00B050'; el.style.background='#eaffea'; }"
+
+# 絶対に押してはいけない語（本申請の送信系）。一時保存の自動化から除外する安全ガード。
+_FORBIDDEN_BTN = ("送信", "申請", "提出", "確定", "登録完了", "完了する")
+# 一時保存（下書き保存）として許可するボタン文言。左優先。
+_SAVE_NAMES = ("一時保存", "下書き保存", "下書き保存する", "一時保存する")
+# 次のタブ/セクションへ進む操作の候補文言。
+_NEXT_NAMES = ("次の項目へ", "次へ進む", "次のページへ", "次へ", "次のページ", "次")
+
+
+def _field_display(fld, idx):
+    return fld.get("desc") or fld.get("selector") or fld.get("label") or ("field#%d" % idx)
+
+
+def build_plan(mapping, hearing, kits, out_ws, out_folder):
+    """全マッピング欄の入力値を先に解決し、状態付きの作業リストを作る。"""
+    plan = []
+    for idx, fld in enumerate(mapping.get("fields", [])):
+        if not isinstance(fld, dict):
+            continue                                   # 説明用の文字列はスキップ
+        if not (fld.get("selector") or fld.get("label")):
+            continue
+        val = _resolve_value(fld, hearing, kits, out_ws, out_folder)
+        plan.append({"idx": idx, "fld": fld, "val": val,
+                     "desc": _field_display(fld, idx), "status": "pending", "error": ""})
+    return plan
+
+
+def _place_field(page, item):
+    """現在表示中のタブに item の欄があれば入力する。
+       戻り値: placed / absent(このタブには無い) / empty(欄はあるが値が空) /
+               no-choice(ラジオの選択肢不一致) / error(例外)。"""
+    fld = item["fld"]
+    val = item["val"]
+    ftype = (fld.get("type") or "text").lower()
+    try:
+        if ftype == "radio":
+            grp = (fld.get("selector") or "").strip()
+            if not grp:
+                return "empty"
+            radios = page.locator(grp)
+            cnt = radios.count()
+            if cnt == 0:
+                return "absent"
+            try:
+                if not radios.first.is_visible():
+                    return "absent"                    # 別タブに存在（未表示）→後で
+            except Exception:
+                pass
+            choice = fld.get("choice") or val
+            if not choice:
+                return "empty"
+            for i in range(cnt):
+                r = radios.nth(i)
+                lbl = r.evaluate(_RADIO_LABEL_JS)
+                if choice == (lbl or "").strip() or choice in (lbl or ""):
+                    r.check()
+                    r.evaluate(_HILITE_JS)
+                    return "placed"
+            try:
+                page.locator("%s[value='%s']" % (grp, choice)).first.check()
+                return "placed"
+            except Exception:
+                return "no-choice"
+
+        loc = _locate(page, fld)
+        if loc is None or loc.count() == 0:
+            return "absent"
+        try:
+            if not loc.is_visible():
+                return "absent"                        # 別タブに存在（未表示）→後で
+        except Exception:
+            pass
+        if not val:
+            return "empty"
+        tag = loc.evaluate("el => el.tagName.toLowerCase()")
+        if tag == "select" or ftype == "select":
+            try:
+                loc.select_option(label=val)
+            except Exception:
+                loc.select_option(value=val)
+        elif ftype == "checkbox":
+            (loc.check() if str(val) not in ("", "0", "false", "無", "×") else loc.uncheck())
+        else:
+            loc.fill(str(val))
+        loc.evaluate(_HILITE_JS2)
+        return "placed"
+    except Exception as e:
+        item["error"] = repr(e)
+        return "error"
+
+
+def _btn_text(loc):
+    try:
+        return (loc.inner_text() or "").strip()
+    except Exception:
+        try:
+            return (loc.get_attribute("value") or "").strip()
+        except Exception:
+            return ""
+
+
+def _is_forbidden(text):
+    return any(w in (text or "") for w in _FORBIDDEN_BTN)
+
+
+def _find_clickable(page, names, explicit_selector=None):
+    """names のいずれかの文言を持つ、押せる要素を探す。送信系は除外。
+       戻り値: (locator or None, matched_text)。"""
+    if explicit_selector:
+        try:
+            b = page.locator(explicit_selector).first
+            if b.count() > 0 and b.is_enabled():
+                t = _btn_text(b)
+                if not _is_forbidden(t):
+                    return b, t
+        except Exception:
+            pass
+    for name in names:
+        for role in ("button", "link"):
+            try:
+                b = page.get_by_role(role, name=name, exact=False)
+                n = b.count()
+            except Exception:
+                n = 0
+            for i in range(n):
+                cand = b.nth(i)
+                try:
+                    if not cand.is_visible() or not cand.is_enabled():
+                        continue
+                except Exception:
+                    continue
+                t = _btn_text(cand) or name
+                if _is_forbidden(t):
+                    continue
+                return cand, t
+        # input[type=button|submit] を value で
+        for typ in ("button", "submit"):
+            try:
+                b = page.locator("input[type='%s'][value*='%s']" % (typ, name))
+                if b.count() > 0 and b.first.is_visible() and b.first.is_enabled():
+                    t = _btn_text(b.first) or name
+                    if not _is_forbidden(t):
+                        return b.first, t
+            except Exception:
+                pass
+    return None, ""
+
+
+def _click_next(page, mapping):
+    """次のタブ/セクションへ進む。進めたら True。最後のタブなら False。"""
+    loc, _ = _find_clickable(page, _NEXT_NAMES, mapping.get("next_selector"))
+    if loc is None:
+        return False
+    try:
+        loc.click()
+        page.wait_for_timeout(400)                     # 瞬時切替でもDOM反映待ち
+        return True
+    except Exception:
+        return False
+
+
+def _collect_site_errors(page, mapping):
+    """サイトが表示する検証（不備）メッセージを収集。"""
+    cands = []
+    if mapping.get("error_selector"):
+        cands.append(mapping["error_selector"])
+    cands += [".error", ".errorMessage", ".error-message", ".help-block.error",
+              ".text-danger", ".is-error", ".invalid-feedback",
+              "[class*='error']:not(input):not(select):not(textarea)",
+              ".alert-danger", "[role='alert']"]
+    msgs = []
+    for c in cands:
+        try:
+            loc = page.locator(c)
+            for i in range(min(loc.count(), 80)):
+                el = loc.nth(i)
+                try:
+                    if not el.is_visible():
+                        continue
+                    t = (el.inner_text() or "").strip()
+                except Exception:
+                    t = ""
+                if t and len(t) < 300:
+                    msgs.append(" ".join(t.split()))
+        except Exception:
+            pass
+    # 重複除去（順序保持）
+    seen, out = set(), []
+    for m in msgs:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
+def _click_save(page, mapping):
+    """一時保存（下書き保存）ボタンをクリック。送信系は押さない。
+       戻り値: (clicked:bool, text:str)。"""
+    loc, text = _find_clickable(page, _SAVE_NAMES, mapping.get("save_selector"))
+    if loc is None:
+        return False, ""
+    if _is_forbidden(text):
+        return False, text                             # 念のため二重ガード
+    try:
+        loc.click()
+        page.wait_for_timeout(1200)
+        return True, text
+    except Exception:
+        return False, text
+
+
+def _write_report(lines):
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    path = os.path.join(LOGDIR, "web_autofill_report_%s.txt" % ts)
+    try:
+        with io.open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception:
+        path = ""
+    return path, ts
+
+
+def run_auto(page, mapping, hearing, kits):
+    """全タブを自動で送りながら全欄を入力し、最後に一時保存。不備は箇所を報告。"""
+    out_ws, out_folder = load_output_ctx(mapping)
+    src_line = ("参照元(アウトプット): %s ／ 様式xlsx=%s"
+                % (os.path.basename(out_folder), "あり" if out_ws is not None else "なし")) \
+        if out_folder else "※ アウトプット未検出 → ヒアリングから取得（先に転記実行.batを推奨）"
+    print(src_line)
+
+    plan = build_plan(mapping, hearing, kits, out_ws, out_folder)
+    max_sections = int(mapping.get("max_sections", 25))
+    print("自動一括入力を開始します（%d欄・最大%dタブ）…" % (len(plan), max_sections))
+
+    for sec in range(max_sections):
+        placed_here = 0
+        for item in plan:
+            if item["status"] == "placed":
+                continue
+            st = _place_field(page, item)
+            if st == "absent":
+                continue                               # このタブには無い→次タブで再挑戦
+            # 一度でも欄が見つかった時点で状態を確定（placed/empty/no-choice/error）
+            item["status"] = st
+            if st == "placed":
+                placed_here += 1
+        print("  タブ%d: %d欄入力" % (sec + 1, placed_here))
+        if not _click_next(page, mapping):
+            print("  （これ以上「次へ」が無いため、全タブ走査を終了）")
+            break
+
+    # ---- レポート集計 ----
+    placed = [i for i in plan if i["status"] == "placed"]
+    empty = [i for i in plan if i["status"] == "empty"]
+    notfound = [i for i in plan if i["status"] == "pending"]     # どのタブにも無かった
+    nochoice = [i for i in plan if i["status"] == "no-choice"]
+    errored = [i for i in plan if i["status"] == "error"]
+
+    R = []
+    R.append("=== Web自動一括入力 レポート  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    R.append(src_line)
+    R.append("入力できた欄: %d / %d" % (len(placed), len(plan)))
+
+    def sel_of(i):
+        return i["fld"].get("selector") or i["fld"].get("label") or ""
+
+    if empty:
+        R.append("\n【未入力：欄はあるが値が空】← データ元（アウトプット/ヒアリング）を確認")
+        for i in empty:
+            R.append("  - %s  (selector=%s)" % (i["desc"], sel_of(i)))
+    if notfound:
+        R.append("\n【見つからない：どのタブにも欄が無い】← selector/label の見直しが必要")
+        for i in notfound:
+            R.append("  - %s  (selector=%s)" % (i["desc"], sel_of(i)))
+    if nochoice:
+        R.append("\n【ラジオ未選択：選択肢が一致せず】← choice の文言を確認")
+        for i in nochoice:
+            R.append("  - %s  (choice=%s)" % (i["desc"], i["fld"].get("choice") or i["val"]))
+    if errored:
+        R.append("\n【入力時エラー】")
+        for i in errored:
+            R.append("  - %s  %s" % (i["desc"], i["error"]))
+
+    # ---- 一時保存 ----
+    R.append("\n--- 一時保存（下書き保存）---")
+    url_before = page.url
+    clicked, btn_text = _click_save(page, mapping)
+    if not clicked:
+        R.append("一時保存ボタンが見つかりませんでした（送信系は自動的に除外しています）。")
+        R.append("→ 画面の一時保存ボタンの selector を web_mapping.json の \"save_selector\" に設定してください。")
+    else:
+        R.append("一時保存ボタン「%s」をクリックしました。" % btn_text)
+
+    site_errs = _collect_site_errors(page, mapping)
+    if site_errs:
+        R.append("\n★ サイトの検証メッセージ（不備）で止まっています：")
+        for m in site_errs[:60]:
+            R.append("  ● %s" % m)
+        R.append("→ 上記の不備を修正のうえ、再実行するか画面で手直ししてください。")
+    elif clicked:
+        moved = (page.url != url_before)
+        R.append("サイトの検証エラーは検出されませんでした（%s）。"
+                 % ("保存後に画面遷移あり" if moved else "画面遷移なし"))
+        R.append("→ 一時保存された可能性が高いですが、画面表示を必ずご確認ください。")
+
+    # ---- スクリーンショット＆レポート保存 ----
+    shot = ""
+    try:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        shot = os.path.join(LOGDIR, "web_autofill_%s.png" % ts)
+        page.screenshot(path=shot, full_page=True)
+    except Exception:
+        shot = ""
+    if shot:
+        R.append("\nスクリーンショット: %s" % shot)
+    rpath, _ = _write_report(R)
+
+    print("\n" + "\n".join(R))
+    if rpath:
+        print("\nレポートを保存しました: %s" % rpath)
+    print("\n※ 送信は行っていません。最終確認と送信は必ず人が行ってください。")
+
+
 def main():
     mode_dump = "--dump" in sys.argv
+    mode_auto = "--auto" in sys.argv
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -397,6 +735,11 @@ def main():
         if mode_dump:
             input("  対象フォームを表示したら、このウィンドウで Enter（入力欄を抽出します）…")
             dump_fields(page)
+        elif mode_auto:
+            input("  plan01フォームの先頭タブを表示したら、このウィンドウで Enter（自動一括入力→一時保存を開始）…")
+            print("  ※ 全タブを自動で送りながら入力し、最後に一時保存まで行います（送信はしません）。")
+            run_auto(page, mapping, hearing, kits)
+            input("\n  結果を確認したら Enter でブラウザを閉じます…")
         else:
             input("  plan01フォームを表示したら、このウィンドウで Enter（自動入力を開始）…")
             print("  ※ 複数ページのフォームは、入力後に「次の項目へ」で次を表示→Enter で続けて入力できます。")
