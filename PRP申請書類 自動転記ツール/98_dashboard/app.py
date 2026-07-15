@@ -75,15 +75,36 @@ def safe_name(name):
     return name.replace("\\", "").replace("/", "").strip()
 
 
+def input_kind(name):
+    """ファイル名から種別を判定（ヒアリングシート/略歴書/その他）。transcribe.py の選別と同じ流儀。"""
+    b = os.path.basename(name or "")
+    if "ヒアリング" in b:
+        return "hearing"
+    if "略歴" in b:
+        return "rireki"
+    return "other"
+
+
 def list_inputs():
     files = [f for f in glob.glob(os.path.join(DIR_INPUT, "*.xlsx"))
              if not os.path.basename(f).startswith("~$")]
     files.sort(key=os.path.getmtime, reverse=True)
     return [{
         "name": os.path.basename(f),
+        "kind": input_kind(f),
         "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M"),
         "size_kb": round(os.path.getsize(f) / 1024),
     } for f in files]
+
+
+def detect_hearing():
+    """01_input からヒアリングシート本体を自動判定（find_hearing と同じ優先順位）。"""
+    cands = [f for f in glob.glob(os.path.join(DIR_INPUT, "*.xlsx"))
+             if not os.path.basename(f).startswith("~$")]
+    named = [c for c in cands if "ヒアリング" in os.path.basename(c)]
+    pool = named or [c for c in cands if "略歴" not in os.path.basename(c)] or cands
+    pool.sort(key=os.path.getmtime, reverse=True)
+    return os.path.basename(pool[0]) if pool else ""
 
 
 def list_outputs():
@@ -180,21 +201,49 @@ def api_state():
 
 @app.post("/api/upload")
 def api_upload():
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "ファイルがありません"}), 400
-    name = safe_name(f.filename)
-    if not name.lower().endswith(".xlsx"):
-        return jsonify({"error": "拡張子が .xlsx のヒアリングシートを選んでください"}), 400
-    dest = os.path.join(DIR_INPUT, name)
-    f.save(dest)
-    return jsonify({"name": name})
+    """ヒアリングシート・略歴書などを一括アップロード（.xlsx 複数可）→ 01_input へ保存。"""
+    files = request.files.getlist("file")
+    if not files:
+        one = request.files.get("file")
+        files = [one] if one else []
+    saved, skipped = [], []
+    for f in files:
+        if not f or not f.filename:
+            continue
+        name = safe_name(f.filename)
+        if not name.lower().endswith(".xlsx"):
+            skipped.append(name)
+            continue
+        f.save(os.path.join(DIR_INPUT, name))
+        saved.append(name)
+    if not saved:
+        return jsonify({"error": "アップロードできる .xlsx がありませんでした（拡張子をご確認ください）",
+                        "skipped": skipped}), 400
+    return jsonify({"saved": saved, "skipped": skipped})
+
+
+@app.post("/api/delete")
+def api_delete():
+    """01_input のファイルを1件削除（入力セットをその都度整えるため）。"""
+    data = request.get_json(silent=True) or {}
+    name = safe_name(data.get("name", "") or request.form.get("name", ""))
+    if not name:
+        return jsonify({"error": "ファイル名がありません"}), 400
+    path = os.path.join(DIR_INPUT, name)
+    if not os.path.exists(path):
+        return jsonify({"error": "ファイルが見つかりません"}), 404
+    try:
+        os.remove(path)
+    except Exception as e:
+        return jsonify({"error": "削除に失敗: %r" % e}), 500
+    return jsonify({"ok": True, "name": name})
 
 
 @app.get("/api/run")
 def api_run():
-    """指定ヒアリングシートで transcribe.py を実行し、進捗をSSEで流す。"""
-    fname = safe_name(request.args.get("file", ""))
+    """ヒアリングシートで transcribe.py を実行し、進捗をSSEで流す。
+       file 未指定なら 01_input のヒアリングシートを自動判定（略歴書は自動で取り込まれる）。"""
+    fname = safe_name(request.args.get("file", "")) or detect_hearing()
     hearing_path = os.path.join(DIR_INPUT, fname) if fname else ""
 
     @stream_with_context

@@ -68,6 +68,13 @@ INDEX_HTML = r"""<!doctype html>
   .files li .meta{color:var(--sub);font-size:11px;flex:none}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none}
   .files li.sel .dot{background:var(--brand)}
+  /* 種別タグ・削除ボタン */
+  .tag{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--line);color:var(--sub);flex:none}
+  .tag.hearing{background:rgba(47,109,246,.14);color:var(--brand)}
+  .tag.rireki{background:var(--okbg);color:var(--ok)}
+  .files li .del{background:transparent;border:none;color:var(--sub);font-size:14px;line-height:1;
+    padding:3px 7px;flex:none;border-radius:7px;font-weight:700}
+  .files li .del:hover{background:var(--dangerbg);color:var(--danger)}
   /* button */
   button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid transparent;padding:10px 16px;font-weight:600}
   .btn{background:var(--brand);color:var(--brand-ink)}
@@ -136,7 +143,7 @@ INDEX_HTML = r"""<!doctype html>
       <button class="tool-card" data-go="transcribe">
         <span class="ic">🩺</span>
         <span class="tt">PRP申請書類 自動転記ツール</span>
-        <span class="td">ヒアリングシートから申請書類一式を自動生成します。</span>
+        <span class="td">ヒアリングシートと略歴書から申請書類一式を自動生成します。</span>
         <span class="go">開く →</span>
       </button>
       <button class="tool-card" data-go="web">
@@ -154,17 +161,19 @@ INDEX_HTML = r"""<!doctype html>
   <div class="grid">
     <!-- 左: 入力 & 実行 -->
     <div class="card">
-      <h2><span class="n">1</span>ヒアリングシートを選ぶ</h2>
+      <h2><span class="n">1</span>必要なファイルをすべて入れる</h2>
       <div id="drop">
         <div class="big">📄</div>
-        <div>ここに <b>PRPヒアリングシート.xlsx</b> をドラッグ&ドロップ<br>
-          <span class="muted">またはクリックしてファイルを選択</span></div>
-        <input type="file" id="file" accept=".xlsx" hidden>
+        <div>ここに <b>ヒアリングシート</b>（1つ）と <b>略歴書</b>（複数可）を<br>まとめてドラッグ&ドロップ<br>
+          <span class="muted">またはクリックして選択（複数選択できます）</span></div>
+        <input type="file" id="file" accept=".xlsx" multiple hidden>
       </div>
+      <div class="muted" style="margin-top:8px;font-size:11.5px">
+        ※ その都度、今回使うファイルを全て入れてください。不要なファイルは各行の <b>✕</b> で削除できます。</div>
       <ul class="files" id="inputList"></ul>
 
       <h2 style="margin-top:20px"><span class="n">2</span>転記を実行する</h2>
-      <div class="muted" id="selInfo">上の一覧からファイルを選択してください。</div>
+      <div class="muted" id="selInfo">ヒアリングシートと略歴書を入れてください。</div>
       <div class="run-row">
         <button class="btn" id="runBtn" disabled>▶ 転記実行</button>
         <span class="muted" id="runState"></span>
@@ -237,7 +246,7 @@ INDEX_HTML = r"""<!doctype html>
 
 <script>
 const $ = s => document.querySelector(s);
-let selected = null;      // 選択中の入力ファイル名
+let inputs = [];          // 01_input の現在のファイル一覧
 let running = false;
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show");
@@ -246,22 +255,54 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("sh
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 // ---- 一覧の描画 ----
+const KIND_TAG = {
+  hearing:'<span class="tag hearing">ヒアリング</span>',
+  rireki: '<span class="tag rireki">略歴書</span>',
+  other:  '<span class="tag">その他</span>',
+};
 function renderInputs(list){
+  inputs = list || [];
   const ul=$("#inputList"); ul.innerHTML="";
-  if(!list.length){ ul.innerHTML='<li style="cursor:default"><span class="muted">01_input にファイルがありません</span></li>'; return; }
-  list.forEach(f=>{
-    const li=document.createElement("li");
-    if(f.name===selected) li.classList.add("sel");
-    li.innerHTML=`<span class="dot"></span><span class="nm">${esc(f.name)}</span>
-      <span class="meta">${f.mtime} ・ ${f.size_kb}KB</span>`;
-    li.onclick=()=>{ selected=f.name; renderInputs(list); updateSel(); };
+  if(!inputs.length){
+    ul.innerHTML='<li style="cursor:default"><span class="muted">まだファイルがありません。上のエリアに入れてください。</span></li>';
+    updateRunState(); return;
+  }
+  inputs.forEach(f=>{
+    const li=document.createElement("li"); li.style.cursor="default";
+    li.innerHTML=`${KIND_TAG[f.kind]||KIND_TAG.other}<span class="nm">${esc(f.name)}</span>
+      <span class="meta">${f.mtime} ・ ${f.size_kb}KB</span>
+      <button class="del" title="この入力ファイルを削除">✕</button>`;
+    li.querySelector(".del").onclick=()=>delInput(f.name);
     ul.appendChild(li);
   });
+  updateRunState();
 }
-function updateSel(){
-  $("#selInfo").innerHTML = selected
-    ? `選択中: <b>${esc(selected)}</b>` : "上の一覧からファイルを選択してください。";
-  $("#runBtn").disabled = !selected || running;
+function hearingList(){ return inputs.filter(f=>f.kind==="hearing"); }
+function updateRunState(){
+  const hearing=hearingList(), rireki=inputs.filter(f=>f.kind==="rireki");
+  let msg;
+  if(!inputs.length){
+    msg="ヒアリングシートと略歴書を入れてください。";
+  }else{
+    const h = hearing.length
+      ? `ヒアリングシート <b>${hearing.length}</b>件`
+      : `<span style="color:var(--danger);font-weight:700">ヒアリングシート未添付</span>`;
+    msg = `${h} ／ 略歴書 <b>${rireki.length}</b>件`;
+    if(hearing.length>1) msg+=`<br><span class="muted">※ ヒアリングシートが複数あります。最新の「${esc(hearing[0].name)}」を使用します。</span>`;
+    if(hearing.length && !rireki.length) msg+=`<br><span class="muted">※ 略歴書が入っていません（医師略歴書は生成されません）。</span>`;
+  }
+  $("#selInfo").innerHTML=msg;
+  $("#runBtn").disabled = !hearing.length || running;
+}
+async function delInput(name){
+  if(!confirm(name+"\nを 01_input から削除します。よろしいですか？")) return;
+  try{
+    const r=await fetch("/api/delete",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(j.error||"削除に失敗しました"); return; }
+    toast("削除しました: "+name); await refresh();
+  }catch(_){ toast("削除に失敗しました"); }
 }
 
 function renderOutputs(list){
@@ -340,27 +381,35 @@ function logLine(text,cls){
   d.textContent=text; c.appendChild(d); c.scrollTop=c.scrollHeight;
 }
 
-// ---- アップロード ----
-async function uploadFile(file){
-  if(!file.name.toLowerCase().endsWith(".xlsx")){ toast("拡張子 .xlsx のファイルを選んでください"); return; }
-  const fd=new FormData(); fd.append("file",file);
-  toast("アップロード中…");
-  const r=await fetch("/api/upload",{method:"POST",body:fd});
-  const j=await r.json();
-  if(!r.ok){ toast(j.error||"アップロード失敗"); return; }
-  selected=j.name; toast("アップロード完了: "+j.name);
-  await refresh(); updateSel();
+// ---- アップロード（複数可） ----
+async function uploadFiles(fileList){
+  const files=[...fileList].filter(f=>f.name.toLowerCase().endsWith(".xlsx"));
+  const skippedLocal=[...fileList].length - files.length;
+  if(!files.length){ toast("拡張子 .xlsx のファイルを選んでください"); return; }
+  const fd=new FormData(); files.forEach(f=>fd.append("file",f));
+  toast(files.length>1?`アップロード中…（${files.length}件）`:"アップロード中…");
+  try{
+    const r=await fetch("/api/upload",{method:"POST",body:fd});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(j.error||"アップロード失敗"); return; }
+    const n=(j.saved||[]).length;
+    toast(n>1?`アップロード完了（${n}件）`:("アップロード完了: "+((j.saved||[])[0]||"")));
+    const skipped=((j.skipped||[]).length)+skippedLocal;
+    if(skipped) setTimeout(()=>toast(`${skipped}件は .xlsx でないためスキップしました`),700);
+    await refresh();
+  }catch(_){ toast("アップロードに失敗しました"); }
 }
 
 // ---- 実行(SSE) ----
 function run(){
-  if(!selected||running) return;
-  running=true; updateSel();
+  const hearing=hearingList();
+  if(!hearing.length||running) return;
+  running=true; updateRunState();
   $("#runBtn").innerHTML='<span class="spin"></span> 実行中…';
   $("#runState").textContent="処理しています。書類の数によって数十秒〜数分かかります。";
   $("#console").innerHTML=""; $("#console").style.display="block";
 
-  const es=new EventSource("/api/run?file="+encodeURIComponent(selected));
+  const es=new EventSource("/api/run?file="+encodeURIComponent(hearing[0].name));
   es.addEventListener("log", e=>{
     const line=JSON.parse(e.data).line;
     let cls=""; if(/エラー|異常|失敗/.test(line)) cls="err";
@@ -386,7 +435,7 @@ function run(){
     running=false; es.close();
     $("#runBtn").innerHTML="▶ 転記実行";
     $("#runState").textContent = ok? "完了" : "終了（ログを確認してください）";
-    updateSel();
+    updateRunState();
   }
 }
 
@@ -396,8 +445,6 @@ async function refresh(){
   renderInputs(s.inputs);
   renderOutputs(s.outputs);
   renderHistory(s.logs);
-  if(!selected && s.inputs.length) selected=s.inputs[0].name;
-  updateSel();
   webRefreshStatus();
 }
 
@@ -522,7 +569,7 @@ $("#webSetupBtn").onclick=webSetup;
 // 機能を増やすときは VIEWS に1行、HTMLに <section id="view-XXX"> を1つ、ホームに tool-card を1枚足すだけ。
 const VIEWS={
   home:      {title:"🩺 再生医療 ダッシュボード", sub:"使う機能を選んでください。",                    back:false},
-  transcribe:{title:"🩺 PRP申請書類 自動転記ツール", sub:"ヒアリングシートを入れて「転記実行」を押すだけ。書類一式が生成されます。", back:true},
+  transcribe:{title:"🩺 PRP申請書類 自動転記ツール", sub:"ヒアリングシートと略歴書（複数可）を入れて「転記実行」を押すだけ。書類一式が生成されます。", back:true},
   web:       {title:"🌐 Web転記ツール",            sub:"e-再生医療フォームへ自動入力します（送信はしません）。",       back:true},
 };
 function showView(name){
@@ -548,10 +595,10 @@ $("#backBtn").onclick=()=>{ location.hash="#/home"; };
 
 const drop=$("#drop"), fileInput=$("#file");
 drop.onclick=()=>fileInput.click();
-fileInput.onchange=()=>{ if(fileInput.files[0]) uploadFile(fileInput.files[0]); };
+fileInput.onchange=()=>{ if(fileInput.files.length) uploadFiles(fileInput.files); fileInput.value=""; };
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
-drop.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); });
 $("#runBtn").onclick=run;
 
 refresh();          // /api/state と /api/web/status をビューに関係なく先読み
