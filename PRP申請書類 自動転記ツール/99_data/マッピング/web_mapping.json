@@ -24,10 +24,10 @@
   "attach_tab": "添付書類",
   "_about_attach_enabled": "★添付自動化のON/OFF（既定true）。サイト仕様上、添付は一時保存後のみ可能なため、--autoでは 入力→一時保存→保存データ編集に戻る→添付→再度一時保存 の順で実行する。貼り先は #btn_upload_fileupload<N>（N=書類番号）に直接セット。",
   "attach_enabled": true,
-  "_about_overflow": "★②文字数オーバー対策。Webは改行コードも文字数に含む(表記4000だが実質~3200で溢れる)。char_limit_default=上限, char_warn_default=注意閾値。overflow_mode: report=超過を報告のみ / truncate=末尾を…に短縮して上限内へ。個別に field へ char_limit / char_warn / overflow_mode を書けば上書き。",
+  "_about_overflow": "★②文字数オーバー対策。Webは改行を\r\n=2文字で数えるため、ツールも改行を2文字として計上する(表記4000字でも改行の多い本文は体感3200字程度で溢れる)。char_limit_default=上限, char_warn_default=注意閾値。overflow_mode: mark[既定]=本文を入れず overflow_mark の文字を記入して一時保存を必ず通す / truncate=末尾を…で切って収める / report=そのまま入れて報告のみ(保存が止まる恐れ)。個別に field へ char_limit / overflow_mode / overflow_mark を書けば上書き。",
   "char_limit_default": 4000,
   "char_warn_default": 3200,
-  "overflow_mode": "report",
+  "overflow_mode": "mark",
   "_about_attachments": "★④添付書類。実フォームは『ファイル選択』ボタン→OSダイアログ→『アップロード』ボタン方式。ツールは添付書類タブを開き、各行の見出し先頭番号(1,2,3,4.5,6,7,8,9,14…)と、出力フォルダのファイル先頭番号を突き合わせて自動添付する(file_chooser方式)。設定不要(実行時に自動発見)。attach_tab=添付書類タブ名。",
   "fields": [
     {
@@ -61,42 +61,74 @@
       "desc": "医療機関 名称",
       "selector": "textarea[name='data[Plan][company]']",
       "type": "text",
-      "cell": "N11",
       "source": {
         "t": "hearing",
         "label": "医療機関/名称（診療所開設届上）",
         "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "名　称",
+        "col": "N",
+        "head_cols": [
+          "L"
+        ],
+        "offset": -1,
+        "span": 1
       }
     },
     {
       "desc": "医療機関 都道府県",
       "selector": "select[name='data[Plan][prefecture]']",
       "type": "select",
-      "cell": "N14",
-      "cell_tf": "pref",
       "source": {
         "t": "pref"
+      },
+      "row": {
+        "heading": "住　所",
+        "col": "N",
+        "head_cols": [
+          "L"
+        ],
+        "offset": -1,
+        "span": 1,
+        "tf": "pref"
       }
     },
     {
       "desc": "医療機関 住所(都道府県以降)",
       "selector": "textarea[name='data[Plan][address]']",
       "type": "text",
-      "cell": "N14",
-      "cell_tf": "addr_body",
       "source": {
         "t": "addr_body"
+      },
+      "row": {
+        "heading": "住　所",
+        "col": "N",
+        "head_cols": [
+          "L"
+        ],
+        "offset": -1,
+        "span": 1,
+        "tf": "addr_body"
       }
     },
     {
       "desc": "管理者 氏名",
       "selector": "textarea[name='data[Plan][supervisor]']",
       "type": "text",
-      "cell": "N17",
       "source": {
         "t": "hearing",
         "label": "開設者（診療所開設届上）※医療法人の場合",
         "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "氏　名",
+        "col": "N",
+        "head_cols": [
+          "L"
+        ],
+        "offset": -1,
+        "span": 1
       }
     },
     {
@@ -940,6 +972,16 @@
       }
     },
     {
+      "_note": "★様式L155は『前記入内容を複写する』の指示のため、細胞提供者側と同じ見出しから本文を転記する（Web換算3697字/上限4000字で収まることを確認済み）。",
+      "desc": "説明及び同意の内容(受ける者)",
+      "selector": "#medical_agreement",
+      "type": "text",
+      "row": {
+        "heading": "細胞提供者及び代諾者に対する説明及び同意の内容",
+        "col": "L"
+      }
+    },
+    {
       "desc": "提供終了後の措置(追跡調査)",
       "selector": "#safe_finished",
       "type": "text",
@@ -964,6 +1006,16 @@
       },
       "row": {
         "heading": "試料及び細胞加工物の一部の保管期間",
+        "col": "L"
+      }
+    },
+    {
+      "_note": "★様式は『該当せず』だが、保管する場合は記載が必要になるため常に転記する。",
+      "desc": "保管期間終了後の取扱い",
+      "selector": "#storage_period",
+      "type": "text",
+      "row": {
+        "heading": "試料及び細胞加工物の一部を保管する場合にあっては、保管期間終了後の取扱い",
         "col": "L"
       }
     },
@@ -1029,12 +1081,16 @@
   ],
   "_about_attach_login": "★添付テスト(--attach)で開くログイン画面。添付欄は一時保存した下書きでしか出ないため、ここで受付番号/パスワードを手動入力して下書きを開く。",
   "attach_login_url": "https://saiseiiryo.mhlw.go.jp/application/login/plan",
-  "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定できる。01(様式第一の二xlsx)→書類1『認定再生医療等委員会意見書』、4.5(患者様説明書)→書類5『再生医療等を受ける者に対する説明文書』。",
+  "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定でき、リストにすると同じファイルを複数欄へ貼る。01(様式第一の二xlsx)→書類1『認定再生医療等委員会意見書』(後日差し替え予定)。4.5(患者様説明書)→書類4『細胞提供者又は代諾者に対する説明文書及び同意文書の様式』と書類5『再生医療等を受ける者に対する説明文書及び同意文書の様式』の両方。",
   "attach_slot_map": {
     "01": "1",
-    "4.5": "5"
+    "4.5": [
+      "4",
+      "5"
+    ]
   },
   "attach_skip_prefix": [
     "~$"
-  ]
+  ],
+  "overflow_mark": "文字数超過"
 }

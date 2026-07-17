@@ -377,10 +377,13 @@ def _read_by_heading(ws, heading, col="L", max_span=40, skip=0, occ=1,
     start = _find_heading_row(ws, heading, occ, exact, head_cols)
     if not start:
         return ""
-    begin = start + max(skip, offset)
+    # offset は負も可（値が見出しの“上”にある様式ヘッダ部に対応。例: R11=値 / R12=「名　称」）
+    begin = start + (offset if offset else skip)
+    if begin < 1:
+        return ""
     stop = (begin + span) if span > 0 else min(start + max_span, ws.max_row + 1)
     parts = []
-    for r in range(begin, min(stop, ws.max_row + 1)):
+    for r in range(max(begin, 1), min(stop, ws.max_row + 1)):
         if span <= 0 and r > start and \
            any(TX.clean(ws["%s%d" % (hc, r)].value) for hc in head_cols):
             break                                        # 次の見出しが来たら終了
@@ -421,11 +424,12 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
     #      書式: "row": { "heading": "細胞提供者の選定方法", "col": "L" }
     rowspec = fld.get("row")
     if isinstance(rowspec, dict) and out_ws is not None:
+        hcols = tuple(rowspec.get("head_cols") or ("B", "C", "D"))   # 見出しを探す列
         if rowspec.get("tf") in ("date_year", "date_month", "date_day"):
             # ★日付はセルの生値を読む（TX.cleanで文字列化するとシリアル値/日付型の情報が落ちるため）
             hr = _find_heading_row(out_ws, rowspec.get("heading", ""),
                                    int(rowspec.get("occ", 1)),
-                                   bool(rowspec.get("exact", False)))
+                                   bool(rowspec.get("exact", False)), hcols)
             if not hr:
                 return ""
             r0 = hr + int(rowspec.get("offset", rowspec.get("skip", 0)))
@@ -438,7 +442,18 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
                              int(rowspec.get("occ", 1)),
                              bool(rowspec.get("exact", False)),
                              int(rowspec.get("offset", 0)),
-                             int(rowspec.get("span", 0)))
+                             int(rowspec.get("span", 0)),
+                             hcols)
+        # 住所→都道府県/以降、郵便番号の整形（cell経路と同じ変換を row でも使えるように）
+        tf = rowspec.get("tf")
+        if tf in ("pref", "addr_body"):
+            pref, body = _pref_split(v)
+            if pref or body:
+                return pref if tf == "pref" else body
+        elif tf == "zip":
+            z = (v or "").lstrip("〒 　").strip()
+            if z:
+                return z
         if rowspec.get("tf") in ("date_year", "date_month", "date_day") and v:
             mt = (_re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", v)
                   or _re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", v))
@@ -655,12 +670,21 @@ def _field_display(fld, idx):
     return fld.get("desc") or fld.get("selector") or fld.get("label") or ("field#%d" % idx)
 
 
+def _web_len(s):
+    """Web側の文字数カウントに合わせる。改行は \\r\\n = 2文字として計上される前提で数える
+       （表記は4000字でも、改行の多い本文は体感3200字程度で溢れるため）。"""
+    return len(s) + s.count("\n")
+
+
 def _apply_overflow(item, mapping):
-    """②文字数オーバー対策：値が上限を超えたら記録し、モードに応じて短縮する。
+    """②文字数オーバー対策：値が上限を超えたときの扱いを決める。
        上限= フィールドの char_limit → mapping.char_limit_default。未設定なら判定しない。
-       警告閾値= char_warn（上限未満でも注意喚起）。
-       mode= フィールドの overflow_mode → mapping.overflow_mode（report[既定]/truncate）。
-       ※ Webは改行コードも文字数に含めるため、改行込みで数える。"""
+       mode= フィールドの overflow_mode → mapping.overflow_mode
+         mark    …【既定】本文を入れず「文字数超過」と記入する。
+                   ※長すぎる本文を入れるとサイトが弾いて一時保存まで到達できないため、
+                     保存を必ず通し、あとから該当欄だけ手直しできるようにする。
+         truncate… 末尾を「…」で切って上限内に収める
+         report  … 値はそのまま入れて、超過をレポートするだけ（保存が止まる恐れあり）"""
     val = item.get("val")
     if not isinstance(val, str) or not val:
         return
@@ -668,7 +692,7 @@ def _apply_overflow(item, mapping):
     limit = fld.get("char_limit", mapping.get("char_limit_default"))
     if not limit:
         return
-    n = len(val)                                       # 改行込みでカウント（Web仕様に合わせる）
+    n = _web_len(val)                                  # 改行を2文字として計上
     item["len"] = n
     item["limit"] = limit
     warn = fld.get("char_warn", mapping.get("char_warn_default"))
@@ -676,11 +700,14 @@ def _apply_overflow(item, mapping):
         item["warn_len"] = True                        # 上限手前（改行増で溢れる恐れ）
     if n > limit:
         item["over"] = n - limit
-        mode = fld.get("overflow_mode", mapping.get("overflow_mode", "report"))
+        mode = fld.get("overflow_mode", mapping.get("overflow_mode", "mark"))
         if mode == "truncate":
             cut = max(0, limit - 1)
             item["val"] = val[:cut] + "…"              # 末尾を省略記号にして上限内へ
             item["truncated"] = True
+        elif mode == "mark":
+            item["val"] = fld.get("overflow_mark", mapping.get("overflow_mark", "文字数超過"))
+            item["marked_over"] = True                 # 本文は入れず目印だけ入れる
 
 
 def build_plan(mapping, hearing, kits, out_ws, out_folder):
@@ -1192,17 +1219,26 @@ ATTACH_DIAG_JS = r"""
 """
 
 
-def _attach_slot(num, mapping=None):
-    """★出力ファイルの先頭番号 → 添付スロット番号。
+def _attach_slots(num, mapping=None):
+    """★出力ファイルの先頭番号 → 添付スロット番号の【リスト】。
        実DOMより #btn_upload_fileupload<N> の N が書類番号（1..15、17=その他）。
-       「01」「4.5」等は attach_slot_map で明示、無ければ整数部を使う。"""
+       attach_slot_map で明示できる。同じファイルを複数欄へ貼る場合はリストで指定する：
+         "4.5": ["4", "5"]  … 患者様説明書を 書類4 と 書類5 の両方へ
+         "01" : "1"          … 単一指定も可
+       指定が無ければ整数部をそのまま使う（例 "6" → 書類6）。"""
     n = str(num).strip()
     smap = (mapping or {}).get("attach_slot_map") or {}
     if n in smap:
-        return str(smap[n])
+        v = smap[n]
+        return [str(x) for x in (v if isinstance(v, (list, tuple)) else [v])]
     if "." in n:
         n = n.split(".")[0]
-    return n
+    return [n]
+
+
+def _attach_slot(num, mapping=None):
+    """互換用：先頭のスロット番号だけ返す。"""
+    return _attach_slots(num, mapping)[0]
 
 
 def _attach_input_sel(num, mapping=None):
@@ -1226,7 +1262,8 @@ def _attach_targets(out_folder, mapping, only=""):
         n = _lead_num(b)
         if not n or (only and n != only):
             continue
-        groups.setdefault(_attach_slot(n, mapping), []).append(f)
+        for slot in _attach_slots(n, mapping):        # 同じファイルを複数スロットへ貼れる
+            groups.setdefault(slot, []).append(f)
     return groups
 
 
@@ -1369,6 +1406,128 @@ def _attach_files(page, mapping, out_folder):
     return lines
 
 
+# その欄がどのタブ（申請者情報/項目1〜7/添付書類）にあるかを返すJS＝エラー箇所の案内用
+_TAB_OF_JS = r"""
+(sel) => {
+  let e = null;
+  try { e = document.querySelector(sel); } catch (err) { return ''; }
+  if (!e) return '';
+  let p = e.closest('[role=tabpanel]');
+  if (!p) { let n = e; while (n && n.parentElement) { n = n.parentElement;
+              if (n.id && /^tab\d+$/.test(n.id)) { p = n; break; } } }
+  if (!p) return '';
+  const t = document.querySelector('[role=tab][aria-controls="' + p.id + '"]');
+  return t ? (t.innerText || '').trim() : p.id;
+}
+"""
+
+
+def _field_tab(page, sel):
+    """欄のタブ名（例「項目3」）を返す。取れなければ空。"""
+    if not sel:
+        return ""
+    try:
+        return page.evaluate(_TAB_OF_JS, sel) or ""
+    except Exception:
+        return ""
+
+
+def _write_output_summary(out_folder, receipt, plan, att_lines):
+    """★02_output 直下に結果サマリを出力する（案件ごとの結果が一覧で並ぶように）。
+       ・一時保存の受付番号／パスワード（再編集に必須）
+       ・要対応（文字数超過・未入力・欄なし・未選択・エラー）を、項目名とタブ位置つきで列挙
+       ・添付結果
+       ※ パスは 02_output を前方一致で解決（【】付きフォルダ名でもOK／環境非依存）。
+       戻り値: 出力先パス（失敗時は空）。"""
+    if not out_folder:
+        return ""
+    def _sel(i):
+        return i["fld"].get("selector") or i["fld"].get("label") or ""
+    def _where(i):
+        t = i.get("tab") or ""
+        return ("%s タブ" % t) if t else "（タブ不明）"
+
+    over = [i for i in plan if i.get("over")]
+    empty = [i for i in plan if i["status"] == "empty"]
+    notfound = [i for i in plan if i["status"] == "pending"]
+    nochoice = [i for i in plan if i["status"] == "no-choice"]
+    errored = [i for i in plan if i["status"] == "error"]
+    placed = [i for i in plan if i["status"] == "placed"]
+
+    L = []
+    L.append("=" * 64)
+    L.append(" Web転記 結果サマリ")
+    L.append(" 実行: %s" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    L.append(" 案件: %s" % os.path.basename(out_folder))
+    L.append("=" * 64)
+    L.append("")
+    L.append("■ 一時保存の受付情報（再編集・状況確認に必要。大切に保管）")
+    if receipt.get("受付番号"):
+        L.append("    受付番号  : %s" % receipt.get("受付番号"))
+        L.append("    パスワード: %s" % receipt.get("パスワード", "(取得できず)"))
+        L.append("    ログイン  : https://saiseiiryo.mhlw.go.jp/application/login/plan")
+    else:
+        L.append("    ※ 取得できませんでした（一時保存が完了していない可能性）")
+    L.append("")
+    L.append("■ 入力結果: %d / %d 欄" % (len(placed), len(plan)))
+    L.append("")
+
+    ng = over or empty or notfound or nochoice or errored
+    if not ng:
+        L.append("■ 要対応: なし（すべて転記できました）")
+    else:
+        L.append("■ 要対応（下記は画面で手直しが必要です）")
+    if over:
+        L.append("")
+        L.append("  ―― 文字数超過：本文が入っていません（「文字数超過」と記入済み）――")
+        for i in over:
+            L.append("   ・%s" % i["desc"])
+            L.append("       場所  : %s" % _where(i))
+            L.append("       文字数: %d字 / 上限%d字（%d字超過）" % (i["len"], i["limit"], i["over"]))
+            L.append("       対処  : アウトプットの本文を%d字以内に整えて再実行してください" % i["limit"])
+    if empty:
+        L.append("")
+        L.append("  ―― 未入力：アウトプットに値がありません ――")
+        for i in empty:
+            L.append("   ・%-30s %s" % (i["desc"], _where(i)))
+    if notfound:
+        L.append("")
+        L.append("  ―― 欄が見つからない：画面の構成が変わった可能性 ――")
+        for i in notfound:
+            L.append("   ・%-30s (selector=%s)" % (i["desc"], _sel(i)))
+    if nochoice:
+        L.append("")
+        L.append("  ―― 選択肢が一致しない ――")
+        for i in nochoice:
+            L.append("   ・%-30s %s" % (i["desc"], _where(i)))
+    if errored:
+        L.append("")
+        L.append("  ―― 入力時エラー ――")
+        for i in errored:
+            L.append("   ・%-30s %s  %s" % (i["desc"], _where(i), i.get("error", "")))
+    if att_lines:
+        L.append("")
+        L.append("■ 添付書類")
+        for x in att_lines:
+            t = x.strip()
+            if t and not t.startswith("---"):
+                L.append("   %s" % t)
+    L.append("")
+    L.append("※ 送信・申請は行っていません。最終確認と送信は必ず人が行ってください。")
+
+    # 02_output 直下に出力（案件名をファイル名に含めて一覧で見分けられるようにする）
+    root = TX.resolve_dir("02_output", create=True)
+    case = os.path.basename(out_folder)
+    path = os.path.join(root, "Web転記結果_%s_%s.txt"
+                        % (case, datetime.datetime.now().strftime("%Y%m%d_%H%M")))
+    try:
+        with io.open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(L))
+        return path
+    except Exception:
+        return ""
+
+
 def _write_report(lines):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     path = os.path.join(LOGDIR, "web_autofill_report_%s.txt" % ts)
@@ -1471,6 +1630,12 @@ def run_auto(page, mapping, hearing, kits):
     nochoice = [i for i in plan if i["status"] == "no-choice"]
     errored = [i for i in plan if i["status"] == "error"]
 
+    # ★問題のある欄について「どのタブか」を今のうちに控える
+    #   （一時保存すると画面が確認ページへ遷移し、以降は要素を辿れなくなるため）
+    for i in plan:
+        if i.get("over") or i["status"] in ("empty", "no-choice", "error"):
+            i["tab"] = _field_tab(page, (i["fld"].get("selector") or "").strip())
+
     R = []
     R.append("=== Web自動一括入力 レポート  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     R.append(src_line)
@@ -1559,12 +1724,19 @@ def run_auto(page, mapping, hearing, kits):
     trunc = [i for i in plan if i.get("truncated")]
     warns = [i for i in plan if i.get("warn_len") and not i.get("over")]
     if over:
-        R.append("\n【文字数オーバー】← Web上限超過（改行込みで計上）")
+        R.append("\n★【文字数オーバー】← ここは本文が入っていません。手直しが必要です")
+        R.append("  （Webの数え方に合わせ、改行は2文字として計上しています）")
         for i in over:
-            tag = "→自動短縮で%d字に収めました" % i["limit"] if i.get("truncated") \
-                  else "→未短縮（overflow_mode=report）"
-            R.append("  - %s  %d字 / 上限%d字（%d字超過） %s"
+            if i.get("marked_over"):
+                tag = "→本文は入れず「%s」と記入（保存を通すため）" % i["val"]
+            elif i.get("truncated"):
+                tag = "→自動短縮で%d字に収めました" % i["limit"]
+            else:
+                tag = "→そのまま入力（保存が止まる恐れあり）"
+            R.append("  - %s  %d字 / 上限%d字（%d字超過）\n      %s"
                      % (i["desc"], i["len"], i["limit"], i["over"], tag))
+        R.append("  → 該当欄は、アウトプット側で本文を%d字以内に整えてから再実行してください。"
+                 % (over[0]["limit"] if over else 4000))
     if warns:
         R.append("\n【文字数 注意】← 上限手前（改行が増えると溢れる恐れ）")
         for i in warns:
@@ -1595,6 +1767,8 @@ def run_auto(page, mapping, hearing, kits):
         R.append("→ 一時保存された可能性が高いですが、画面表示を必ずご確認ください。")
 
     # ---- 受付番号・パスワードの抽出（保存確認ページから）----
+    receipt = {}
+    att_lines = []
     if clicked:
         page.wait_for_timeout(800)
         receipt = _extract_receipt(page)
@@ -1612,7 +1786,8 @@ def run_auto(page, mapping, hearing, kits):
         if _click_return_to_edit(page):
             R.append("「保存データ編集に戻る」で下書きを開きました。")
             page.wait_for_timeout(1200)
-            R.extend(_attach_files(page, mapping, out_folder))
+            att_lines = _attach_files(page, mapping, out_folder)
+            R.extend(att_lines)
             page.wait_for_timeout(500)
             clicked2, _ = _click_save(page, mapping)   # 添付を保存するため再度一時保存
             page.wait_for_timeout(1000)
@@ -1638,9 +1813,20 @@ def run_auto(page, mapping, hearing, kits):
         R.append("\nスクリーンショット: %s" % shot)
     rpath, _ = _write_report(R)
 
+    # ---- ★アウトプットフォルダへ結果サマリ（受付番号・パスワード＋要対応の項目と場所）----
+    spath = ""
+    try:
+        spath = _write_output_summary(out_folder, receipt, plan, att_lines)
+    except Exception as e:
+        print("結果サマリの出力に失敗: %r" % e)
+    if spath:
+        R.append("\n★ 結果サマリ（アウトプットに出力）: %s" % spath)
+
     print("\n" + "\n".join(R))
     if rpath:
         print("\nレポートを保存しました: %s" % rpath)
+    if spath:
+        print("★ 結果サマリを出力しました: %s" % spath)
     print("\n※ 送信は行っていません。最終確認と送信は必ず人が行ってください。")
 
 
