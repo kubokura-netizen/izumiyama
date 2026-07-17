@@ -5,158 +5,1024 @@
   "output_folder_contains": "2種関節系PRP",
   "output_sheet": "1 の２提供計画（治療）",
   "saisei": 1,
-
   "_about_auto": "★--auto(自動一括+一時保存)用の設定。空なら文言(次へ/一時保存)で自動探索。うまく進まない/保存できない時だけ、--dumpや画面のHTMLからselectorを入れる。送信/申請/提出/確定を含むボタンは自動では絶対に押さない安全ガードあり。",
   "next_selector": "",
   "save_selector": "",
   "error_selector": "",
   "max_sections": 25,
-
   "_about_tabs": "★このフォームはタブ式(項目1〜7+添付書類)。各タブを順に開いて処理する(表示されて初めてチェック等が押せる)。attach_tabは添付ファイル欄を表示するタブ名。",
-  "tabs": ["申請者情報", "項目1", "項目2", "項目3", "項目4", "項目5", "項目6", "項目7"],
+  "tabs": [
+    "申請者情報",
+    "項目1",
+    "項目2",
+    "項目3",
+    "項目4",
+    "項目5",
+    "項目6",
+    "項目7"
+  ],
   "attach_tab": "添付書類",
   "_about_attach_enabled": "★添付自動化のON/OFF。既定false=手動運用(保存後の編集ページで添付行が自動ブラウザ上に描画されないため)。レポートに手動アップロード対応表(スロット番号←ファイル)を出す。true=保存後フローで自動添付を試みる(file_chooser方式は実装済だが上記事情で不安定)。",
   "attach_enabled": false,
-
   "_about_overflow": "★②文字数オーバー対策。Webは改行コードも文字数に含む(表記4000だが実質~3200で溢れる)。char_limit_default=上限, char_warn_default=注意閾値。overflow_mode: report=超過を報告のみ / truncate=末尾を…に短縮して上限内へ。個別に field へ char_limit / char_warn / overflow_mode を書けば上書き。",
   "char_limit_default": 4000,
   "char_warn_default": 3200,
   "overflow_mode": "report",
-
   "_about_attachments": "★④添付書類。実フォームは『ファイル選択』ボタン→OSダイアログ→『アップロード』ボタン方式。ツールは添付書類タブを開き、各行の見出し先頭番号(1,2,3,4.5,6,7,8,9,14…)と、出力フォルダのファイル先頭番号を突き合わせて自動添付する(file_chooser方式)。設定不要(実行時に自動発見)。attach_tab=添付書類タブ名。",
-
   "fields": [
-    { "desc": "提出日 年", "selector": "#PlanEntrydateYear", "type": "select", "source": { "t": "today", "fmt": "year" } },
-    { "desc": "提出日 月", "selector": "#PlanEntrydateMonth", "type": "select", "source": { "t": "today", "fmt": "month" } },
-    { "desc": "提出日 日", "selector": "#PlanEntrydateDay", "type": "select", "source": { "t": "today", "fmt": "day" } },
-
-    { "desc": "医療機関 名称", "selector": "textarea[name='data[Plan][company]']", "type": "text", "cell": "N11",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "医療機関 都道府県", "selector": "select[name='data[Plan][prefecture]']", "type": "select", "cell": "N14", "cell_tf": "pref",
-      "source": { "t": "pref" } },
-    { "desc": "医療機関 住所(都道府県以降)", "selector": "textarea[name='data[Plan][address]']", "type": "text", "cell": "N14", "cell_tf": "addr_body",
-      "source": { "t": "addr_body" } },
-    { "desc": "管理者 氏名", "selector": "textarea[name='data[Plan][supervisor]']", "type": "text", "cell": "N17",
-      "source": { "t": "hearing", "label": "開設者（診療所開設届上）※医療法人の場合", "section": "法人/医療機関" } },
-    { "desc": "再生医療等の名称", "selector": "textarea[name='data[Plan][servicename]']", "type": "text", "cell": "L27",
-      "source": { "t": "hearing", "label": "再生医療①（右記タブから選択）", "section": "再生医療の名称" } },
-    { "desc": "再生医療等の分類", "selector": "input[name='data[Plan][typing]']", "type": "radio", "choice": "第二種" },
-    { "_note": "★確定チェック（参照元不要）：2種・3種PRPは必ず特定細胞加工物に該当するため常にチェック（fixed=1）。転記ではなく固定でON。",
-      "desc": "特定細胞加工物(チェック)", "selector": "input[name='data[Plan][cells_type1]']", "type": "checkbox", "source": { "t": "fixed", "value": "1" } },
-    { "desc": "再生医療等の分類 判断理由", "selector": "#mcare_classreason", "type": "text", "cell": "L29" },
-    { "desc": "対象疾患等の名称", "selector": "input[name='data[Plan][disease_name]']", "type": "text",
-      "source": { "t": "fixed", "value": "関節内組織損傷（変形性関節症、関節内軟骨損傷、離断性骨軟骨炎、半月板損傷、関節炎、滑膜炎、関節内靱帯損傷、関節唇損傷）" } },
-
-    { "desc": "実施責任者 区分", "selector": "input[name='data[Plan][curator_division]']", "type": "radio", "choice": "医師" },
-    { "desc": "実施責任者 氏名", "selector": "input[name='data[Plan][curator_name]']", "type": "text", "cell": "L44",
-      "source": { "t": "hearing", "label": "氏名", "section": "実施責任者" } },
-    { "desc": "実施責任者 所属機関", "selector": "input[name='data[Plan][curator_institution]']", "type": "text", "cell": "L45",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "実施責任者 所属部署", "selector": "input[name='data[Plan][curator_section]']", "type": "text", "cell": "L46",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "実施責任者 郵便番号", "selector": "input[name='data[Plan][curator_zip]']", "type": "text", "cell": "L47", "cell_tf": "zip",
-      "source": { "t": "hearing", "label": "医療機関/郵便番号（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "実施責任者 住所", "selector": "textarea[name='data[Plan][curator_address]']", "type": "text", "cell": "L48",
-      "source": { "t": "hearing", "label": "医療機関/住所（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "実施責任者 電話", "selector": "input[name='data[Plan][curator_tel]']", "type": "text", "cell": "L49",
-      "source": { "t": "hearing", "label": "電話番号", "section": "実施責任者" } },
-    { "desc": "実施責任者 メール", "selector": "input[name='data[Plan][curator_email]']", "type": "text", "cell": "L50",
-      "source": { "t": "hearing", "label": "メールアドレス", "section": "実施責任者" } },
-
-    { "desc": "事務担当者 氏名", "selector": "input[name='data[Plan][contact_name]']", "type": "text", "cell": "L51",
-      "source": { "t": "hearing", "label": "氏名", "section": "事務担当者" } },
-    { "desc": "事務担当者 所属機関", "selector": "input[name='data[Plan][contact_institution]']", "type": "text", "cell": "L52",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "事務担当者 所属部署", "selector": "input[name='data[Plan][section]']", "type": "text", "cell": "L53",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "事務担当者 郵便番号", "selector": "input[name='data[Plan][contact_zip]']", "type": "text", "cell": "L54", "cell_tf": "zip",
-      "source": { "t": "hearing", "label": "医療機関/郵便番号（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "事務担当者 住所", "selector": "textarea[name='data[Plan][contact_address]']", "type": "text", "cell": "L55",
-      "source": { "t": "hearing", "label": "医療機関/住所（診療所開設届上）", "section": "法人/医療機関" } },
-    { "desc": "事務担当者 電話", "selector": "input[name='data[Plan][tel]']", "type": "text", "cell": "L56",
-      "source": { "t": "hearing", "label": "電話番号", "section": "事務担当者" } },
-    { "desc": "事務担当者 メール", "selector": "input[name='data[Plan][email]']", "type": "text", "cell": "L58",
-      "source": { "t": "hearing", "label": "メールアドレス", "section": "事務担当者" } },
-
-    { "desc": "医師1 区分", "selector": "input[name='data[Plansub1][1][doctor_division]']", "type": "radio", "choice": "医師" },
-    { "desc": "医師1 氏名", "selector": "input[name='data[Plansub1][1][doctor_name]']", "type": "text", "cell": "L60",
-      "source": { "t": "doctor", "idx": 1, "field": "name" } },
-    { "desc": "医師1 所属機関・部署", "selector": "input[name='data[Plansub1][1][doctor_section]']", "type": "text", "cell": "L61",
-      "source": { "t": "hearing", "label": "医療機関/名称（診療所開設届上）", "section": "法人/医療機関" } },
-
-    { "desc": "救急 自施設/他", "selector": "input[name='data[Plan][myfacility]']", "type": "radio", "choice": "他の医療機関" },
-    { "desc": "救急 設備内容", "selector": "#rfi_equipmentcmt", "type": "text", "cell": "L68",
-      "source": { "t": "hearing", "label": "救急医療に必要な施設又は設備の確認", "section": "救急対応" } },
-
-    { "desc": "用いる細胞", "selector": "input[name='data[Plan][cells_used]']", "type": "text", "source": { "t": "fixed", "value": "患者自己血液" } },
-    { "desc": "細胞提供機関の名称", "selector": "input[name='data[Plan][cell_processing_facility]']", "type": "text", "source": { "t": "fixed", "value": "再生医療等の提供を行う医療機関と同じ" } },
-    { "desc": "細胞の採取の方法", "selector": "#collection_method", "type": "text", "cell": "L85", "source": { "t": "token", "name": "採取方法" } },
-    { "desc": "特定細胞加工物等の名称", "selector": "input[name='data[Plan][cell_name]']", "type": "text", "source": { "t": "fixed", "value": "自家多血小板血漿 (自家PRP)" } },
-    { "desc": "製造及び品質管理の概要", "selector": "#cellculture_brief1", "type": "text", "cell": "L92", "source": { "t": "token", "name": "加工方法" } },
-    { "desc": "投与の方法", "selector": "#administration_method1", "type": "text", "cell": "L95", "source": { "t": "token", "name": "投与方法" } },
-
-    { "desc": "製造委託の有無", "selector": "input[name='data[Plansub3][1][referral]']", "type": "radio", "choice": "無" },
-    { "desc": "製造事業者名", "selector": "input[name='data[Plansub3][1][manufacturer]']", "type": "text", "cell": "L97",
-      "source": { "t": "hearing", "label": "特定細胞加工物製造事業者の名称", "section": "細胞加工施設" } },
-    { "desc": "施設番号", "selector": "input[name='data[Plansub3][1][facility_no]']", "type": "text", "cell": "L98",
-      "source": { "t": "hearing", "label": "施設番号", "section": "細胞加工施設" } },
-    { "desc": "施設名", "selector": "input[name='data[Plansub3][1][facility_name]']", "type": "text", "cell": "L99",
-      "source": { "t": "hearing", "label": "細胞培養加工施設の名称", "section": "細胞加工施設" } },
-    { "desc": "許可区分", "selector": "input[name='data[Plansub3][1][facility_type]']", "type": "radio", "choice": "特定細胞加工物" },
-
-    { "desc": "医薬品/医療機器の別", "selector": "input[name='data[Plansub2][1][medical_division]']", "type": "radio", "choice": "医療機器" },
-    { "desc": "未承認/適応外", "selector": "input[name='data[Plansub2][1][approval_division]']", "type": "radio", "choice": "適応外" },
-
-    { "desc": "委員会名", "selector": "input[name='data[Plan][commission_name]']", "type": "text", "cell": "L155",
-      "source": { "t": "hearing", "label": "認定再生医療等委員会の名称", "section": "審査委員会" } },
-    { "desc": "認定番号", "selector": "input[name='data[Plan][commission_no]']", "type": "text", "cell": "L156",
-      "source": { "t": "committee" } },
-    { "desc": "委員会構成(2種=type1にチェック)", "selector": "input[name='data[Plan][commission_type1]']", "type": "checkbox", "source": { "t": "fixed", "value": "1" } },
-
-    { "desc": "役務の提供の有無", "selector": "input[name='data[Plan][subject_review]']", "type": "radio", "choice": "有",
-      "_note": "役務提供者(行政書士)・内容(L169/L170)があるため有。無に戻す場合はchoiceを無へ。" },
-    { "desc": "遺伝子組換え 該当/非該当", "selector": "input[name='data[Plan][cartagena]']", "type": "radio", "choice": "非該当" },
-    { "desc": "生物由来製品 該当/非該当", "selector": "input[name='data[Plan][biological]']", "type": "radio", "choice": "非該当" },
-
-    { "_note": "★5 健康被害の補償。有無はExcelの■/□マーカーで判定(choice_from)。R148行: 有=L148/無=R148。",
-      "desc": "補償の有無(細胞提供者)", "selector": "input[name='data[Plan][cell_donor_reparation]']", "type": "radio",
-      "choice_from": { "options": [["有", "L148"], ["無", "R148"]], "marked": "■" } },
-    { "desc": "補償の内容(細胞提供者)", "selector": "#hazard_ofr", "type": "text", "cell": "L149" },
-    { "desc": "補償の有無(受ける者)", "selector": "input[name='data[Plan][reparation]']", "type": "radio",
-      "choice_from": { "options": [["有", "L151"], ["無", "R151"]], "marked": "■" } },
-    { "desc": "補償の内容(受ける者)", "selector": "#hazard_rsv", "type": "text", "cell": "L152" },
-
-    { "_note": "★7 その他。教育/苦情/役務内容/役務提供者。",
-      "desc": "教育又は研修の方法", "selector": "#other_training", "type": "text", "cell": "L167" },
-    { "desc": "苦情及び問合せへの対応", "selector": "#other_cmp", "type": "text", "cell": "L168" },
-    { "desc": "役務提供の内容", "selector": "#other_provision", "type": "text", "cell": "L169" },
-    { "desc": "役務提供者の名称", "selector": "#other_provider", "type": "text", "cell": "L170" },
-
-    { "_note": "★画面ラベル準拠の長文欄。selector/cellはdump(03_logs/web_fields_dump.txt)とユーザー指定(01様式Excel)で確定済み。",
-      "desc": "再生医療等の内容(平易な表現含む)", "selector": "#mcare_detail", "type": "text", "cell": "L31" },
-    { "desc": "細胞提供者の選定方法", "selector": "#correct_slct", "type": "text", "cell": "L74" },
-    { "desc": "細胞提供者及び代諾者に対する説明及び同意の内容", "selector": "#cell_donor_agreement", "type": "text", "cell": "L77:L80" },
-
-    { "desc": "安全性についての検討内容", "selector": "#safe_safety", "type": "text", "cell": "L126:L129",
-      "docx": { "file_contains": "2 提供", "heading": "再生医療等の意義", "until": "1.2." } },
-    { "desc": "妥当性についての検討内容", "selector": "#safe_valid", "type": "text", "cell": "L130:L135" },
-    { "desc": "適格性の確認方法", "selector": "#correct_chk", "type": "text", "cell": "L76",
-      "docx": { "file_contains": "2 提供", "heading": "1.2. 患者の適格性確認", "until": "1.3." } },
-    { "desc": "投与の可否の決定方法", "selector": "#safe_profit", "type": "text", "cell": "L136",
-      "docx": { "file_contains": "2 提供", "heading": "1.6. 特定細胞加工物の提供の可否決定", "until": "1.7." } },
-    { "desc": "提供終了後の措置(追跡調査)", "selector": "#safe_finished", "type": "text", "cell": "L143",
-      "docx": { "file_contains": "2 提供", "heading": "1.7. 再生医療等の提供後のフォローアップ", "until": "1.8." } },
-    { "desc": "試料及び細胞加工物の保管期間", "selector": "#safe_workpiece", "type": "text", "cell": "L139:L140",
-      "docx": { "file_contains": "2 提供", "heading": "1.8.3. 試料の保存", "until": "1.8.4." } },
-    { "desc": "疾病等発生時の報告体制", "selector": "#safe_serious", "type": "text", "cell": "L141:L142",
-      "docx": { "file_contains": "2 提供", "heading": "1.8.4. 疾病等の発生における報告体制", "until": "1.8.5." } },
-    { "desc": "個人情報の取扱いの方法", "selector": "#other_info", "type": "text", "cell": "L165",
-      "docx": { "file_contains": "2 提供", "heading": "1.8.5. 患者の個人情報の取扱い", "until": "1.8.6." } },
-    { "desc": "安全性の疑義時の措置", "selector": "#safety_doubts", "type": "text", "cell": "L138",
-      "docx": { "file_contains": "2 提供", "heading": "2.3. 細胞の安全性に関する疑義", "until": "2.4." } },
-    { "desc": "情報の把握のための措置", "selector": "#information_grasp", "type": "text", "cell": "L144",
-      "docx": { "file_contains": "2 提供", "heading": "2.4. 再生医療等を受ける者の健康状態", "until": "2.5." } },
-
+    {
+      "desc": "提出日 年",
+      "selector": "#PlanEntrydateYear",
+      "type": "select",
+      "source": {
+        "t": "today",
+        "fmt": "year"
+      }
+    },
+    {
+      "desc": "提出日 月",
+      "selector": "#PlanEntrydateMonth",
+      "type": "select",
+      "source": {
+        "t": "today",
+        "fmt": "month"
+      }
+    },
+    {
+      "desc": "提出日 日",
+      "selector": "#PlanEntrydateDay",
+      "type": "select",
+      "source": {
+        "t": "today",
+        "fmt": "day"
+      }
+    },
+    {
+      "desc": "医療機関 名称",
+      "selector": "textarea[name='data[Plan][company]']",
+      "type": "text",
+      "cell": "N11",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      }
+    },
+    {
+      "desc": "医療機関 都道府県",
+      "selector": "select[name='data[Plan][prefecture]']",
+      "type": "select",
+      "cell": "N14",
+      "cell_tf": "pref",
+      "source": {
+        "t": "pref"
+      }
+    },
+    {
+      "desc": "医療機関 住所(都道府県以降)",
+      "selector": "textarea[name='data[Plan][address]']",
+      "type": "text",
+      "cell": "N14",
+      "cell_tf": "addr_body",
+      "source": {
+        "t": "addr_body"
+      }
+    },
+    {
+      "desc": "管理者 氏名",
+      "selector": "textarea[name='data[Plan][supervisor]']",
+      "type": "text",
+      "cell": "N17",
+      "source": {
+        "t": "hearing",
+        "label": "開設者（診療所開設届上）※医療法人の場合",
+        "section": "法人/医療機関"
+      }
+    },
+    {
+      "desc": "再生医療等の名称",
+      "selector": "textarea[name='data[Plan][servicename]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "再生医療①（右記タブから選択）",
+        "section": "再生医療の名称"
+      },
+      "row": {
+        "heading": "提供しようとする再生医療等の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "再生医療等の分類",
+      "selector": "input[name='data[Plan][typing]']",
+      "type": "radio",
+      "choice": "第二種"
+    },
+    {
+      "_note": "★確定チェック（参照元不要）：2種・3種PRPは必ず特定細胞加工物に該当するため常にチェック（fixed=1）。転記ではなく固定でON。",
+      "desc": "特定細胞加工物(チェック)",
+      "selector": "input[name='data[Plan][cells_type1]']",
+      "type": "checkbox",
+      "source": {
+        "t": "fixed",
+        "value": "1"
+      }
+    },
+    {
+      "desc": "再生医療等の分類 判断理由",
+      "selector": "#mcare_classreason",
+      "type": "text",
+      "row": {
+        "heading": "再生医療等の分類",
+        "col": "L",
+        "skip": 1
+      }
+    },
+    {
+      "desc": "対象疾患等の名称",
+      "selector": "input[name='data[Plan][disease_name]']",
+      "type": "text",
+      "source": {
+        "t": "fixed",
+        "value": "関節内組織損傷（変形性関節症、関節内軟骨損傷、離断性骨軟骨炎、半月板損傷、関節炎、滑膜炎、関節内靱帯損傷、関節唇損傷）"
+      },
+      "row": {
+        "heading": "再生医療等の対象疾患等の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "実施責任者 区分",
+      "selector": "input[name='data[Plan][curator_division]']",
+      "type": "radio",
+      "choice": "医師"
+    },
+    {
+      "desc": "実施責任者 氏名",
+      "selector": "input[name='data[Plan][curator_name]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "氏名",
+        "section": "実施責任者"
+      },
+      "row": {
+        "heading": "氏名",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 所属機関",
+      "selector": "input[name='data[Plan][curator_institution]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 所属部署",
+      "selector": "input[name='data[Plan][curator_section]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属部署",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 郵便番号",
+      "selector": "input[name='data[Plan][curator_zip]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/郵便番号（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関の郵便番号",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 住所",
+      "selector": "textarea[name='data[Plan][curator_address]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/住所（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関の住所",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 電話",
+      "selector": "input[name='data[Plan][curator_tel]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "電話番号",
+        "section": "実施責任者"
+      },
+      "row": {
+        "heading": "電話番号",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "実施責任者 メール",
+      "selector": "input[name='data[Plan][curator_email]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "メールアドレス",
+        "section": "実施責任者"
+      },
+      "row": {
+        "heading": "電子メールアドレス",
+        "col": "L",
+        "exact": true,
+        "occ": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 氏名",
+      "selector": "input[name='data[Plan][contact_name]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "氏名",
+        "section": "事務担当者"
+      },
+      "row": {
+        "heading": "氏名",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 所属機関",
+      "selector": "input[name='data[Plan][contact_institution]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 所属部署",
+      "selector": "input[name='data[Plan][section]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属部署",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 郵便番号",
+      "selector": "input[name='data[Plan][contact_zip]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/郵便番号（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関の郵便番号",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 住所",
+      "selector": "textarea[name='data[Plan][contact_address]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/住所（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "所属機関の住所",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 電話",
+      "selector": "input[name='data[Plan][tel]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "電話番号",
+        "section": "事務担当者"
+      },
+      "row": {
+        "heading": "電話番号",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "事務担当者 メール",
+      "selector": "input[name='data[Plan][email]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "メールアドレス",
+        "section": "事務担当者"
+      },
+      "row": {
+        "heading": "電子メールアドレス",
+        "col": "L",
+        "exact": true,
+        "occ": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "医師1 区分",
+      "selector": "input[name='data[Plansub1][1][doctor_division]']",
+      "type": "radio",
+      "choice": "医師"
+    },
+    {
+      "desc": "医師1 氏名",
+      "selector": "input[name='data[Plansub1][1][doctor_name]']",
+      "type": "text",
+      "source": {
+        "t": "doctor",
+        "idx": 1,
+        "field": "name"
+      },
+      "row": {
+        "heading": "再生医療等を行う医師又は歯科医師",
+        "col": "L",
+        "occ": 1,
+        "offset": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "医師1 所属機関・部署",
+      "selector": "input[name='data[Plansub1][1][doctor_section]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "医療機関/名称（診療所開設届上）",
+        "section": "法人/医療機関"
+      },
+      "row": {
+        "heading": "再生医療等を行う医師又は歯科医師",
+        "col": "L",
+        "occ": 1,
+        "offset": 2,
+        "span": 1
+      }
+    },
+    {
+      "desc": "救急 自施設/他",
+      "selector": "input[name='data[Plan][myfacility]']",
+      "type": "radio",
+      "choice": "他の医療機関"
+    },
+    {
+      "desc": "救急 設備内容",
+      "selector": "#rfi_equipmentcmt",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "救急医療に必要な施設又は設備の確認",
+        "section": "救急対応"
+      },
+      "row": {
+        "heading": "救急医療に必要な施設又は設備",
+        "col": "L",
+        "skip": 1
+      }
+    },
+    {
+      "desc": "用いる細胞",
+      "selector": "input[name='data[Plan][cells_used]']",
+      "type": "text",
+      "source": {
+        "t": "fixed",
+        "value": "患者自己血液"
+      },
+      "row": {
+        "heading": "再生医療等に用いる細胞",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "細胞提供機関の名称",
+      "selector": "input[name='data[Plan][cell_processing_facility]']",
+      "type": "text",
+      "source": {
+        "t": "fixed",
+        "value": "再生医療等の提供を行う医療機関と同じ"
+      },
+      "row": {
+        "heading": "細胞提供者から細胞の提供を受ける医療機関等の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "細胞の採取の方法",
+      "selector": "#collection_method",
+      "type": "text",
+      "source": {
+        "t": "token",
+        "name": "採取方法"
+      },
+      "row": {
+        "heading": "細胞の採取の方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "特定細胞加工物等の名称",
+      "selector": "input[name='data[Plan][cell_name]']",
+      "type": "text",
+      "source": {
+        "t": "fixed",
+        "value": "自家多血小板血漿 (自家PRP)"
+      },
+      "row": {
+        "heading": "特定細胞加工物の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "製造及び品質管理の概要",
+      "selector": "#cellculture_brief1",
+      "type": "text",
+      "source": {
+        "t": "token",
+        "name": "加工方法"
+      },
+      "row": {
+        "heading": "製造及び品質管理の方法の概要",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "投与の方法",
+      "selector": "#administration_method1",
+      "type": "text",
+      "source": {
+        "t": "token",
+        "name": "投与方法"
+      },
+      "row": {
+        "heading": "特定細胞加工物の投与の方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "製造委託の有無",
+      "selector": "input[name='data[Plansub3][1][referral]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "特定細胞加工物の製造の委託の有無",
+        "options": [
+          [
+            "有",
+            "L"
+          ],
+          [
+            "無",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "製造事業者名",
+      "selector": "input[name='data[Plansub3][1][manufacturer]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "特定細胞加工物製造事業者の名称",
+        "section": "細胞加工施設"
+      },
+      "row": {
+        "heading": "特定細胞加工物製造事業者の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "施設番号",
+      "selector": "input[name='data[Plansub3][1][facility_no]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "施設番号",
+        "section": "細胞加工施設"
+      },
+      "row": {
+        "heading": "細胞培養加工施設",
+        "col": "L",
+        "span": 1
+      }
+    },
+    {
+      "desc": "施設名",
+      "selector": "input[name='data[Plansub3][1][facility_name]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "細胞培養加工施設の名称",
+        "section": "細胞加工施設"
+      },
+      "row": {
+        "heading": "細胞培養加工施設",
+        "col": "L",
+        "offset": 1,
+        "span": 1
+      }
+    },
+    {
+      "desc": "許可区分",
+      "selector": "input[name='data[Plansub3][1][facility_type]']",
+      "type": "radio",
+      "choice": "特定細胞加工物"
+    },
+    {
+      "desc": "医薬品/医療機器の別",
+      "selector": "input[name='data[Plansub2][1][medical_division]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "医薬品又は医療機器の別",
+        "options": [
+          [
+            "医薬品",
+            "L"
+          ],
+          [
+            "医療機器",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "未承認/適応外",
+      "selector": "input[name='data[Plansub2][1][approval_division]']",
+      "type": "radio",
+      "choice": "適応外"
+    },
+    {
+      "desc": "委員会名",
+      "selector": "input[name='data[Plan][commission_name]']",
+      "type": "text",
+      "source": {
+        "t": "hearing",
+        "label": "認定再生医療等委員会の名称",
+        "section": "審査委員会"
+      },
+      "row": {
+        "heading": "認定再生医療等委員会の名称",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "認定番号",
+      "selector": "input[name='data[Plan][commission_no]']",
+      "type": "text",
+      "source": {
+        "t": "committee"
+      },
+      "row": {
+        "heading": "認定再生医療等委員会の認定番号",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "委員会構成(2種=type1にチェック)",
+      "selector": "input[name='data[Plan][commission_type1]']",
+      "type": "checkbox",
+      "source": {
+        "t": "fixed",
+        "value": "1"
+      }
+    },
+    {
+      "_note": "★6 審査結果はExcelの■/□で判定（R158行: 適=L158 / 不適=R158）。意見書発行日はL159『2026年 6月 15日』を年/月/日に分解。",
+      "desc": "委員会 審査結果",
+      "selector": "input[name='data[Plan][examination_outcome]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "認定再生医療等委員会による審査結果",
+        "options": [
+          [
+            "適",
+            "L"
+          ],
+          [
+            "不適",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "意見書の発行日 年",
+      "selector": "#PlanOpinionIssueDateYear",
+      "type": "select",
+      "row": {
+        "heading": "認定再生医療等委員会による意見書の発行日",
+        "col": "L",
+        "tf": "date_year"
+      }
+    },
+    {
+      "desc": "意見書の発行日 月",
+      "selector": "#PlanOpinionIssueDateMonth",
+      "type": "select",
+      "row": {
+        "heading": "認定再生医療等委員会による意見書の発行日",
+        "col": "L",
+        "tf": "date_month"
+      }
+    },
+    {
+      "desc": "意見書の発行日 日",
+      "selector": "#PlanOpinionIssueDateDay",
+      "type": "select",
+      "row": {
+        "heading": "認定再生医療等委員会による意見書の発行日",
+        "col": "L",
+        "tf": "date_day"
+      }
+    },
+    {
+      "desc": "役務の提供の有無",
+      "selector": "input[name='data[Plan][subject_review]']",
+      "type": "radio",
+      "choice": "有",
+      "_note": "役務提供者(行政書士)・内容(L169/L170)があるため有。無に戻す場合はchoiceを無へ。"
+    },
+    {
+      "desc": "遺伝子組換え 該当/非該当",
+      "selector": "input[name='data[Plan][cartagena]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "遺伝子組換え生物等の使用等の規制",
+        "options": [
+          [
+            "該当",
+            "L"
+          ],
+          [
+            "非該当",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "生物由来製品 該当/非該当",
+      "selector": "input[name='data[Plan][biological]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "生物由来製品に指定が",
+        "options": [
+          [
+            "該当",
+            "L"
+          ],
+          [
+            "非該当",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "_note": "★5 健康被害の補償。有無はExcelの■/□マーカーで判定(choice_from)。R148行: 有=L148/無=R148。",
+      "desc": "補償の有無(細胞提供者)",
+      "selector": "input[name='data[Plan][cell_donor_reparation]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "補償の有無",
+        "occ": 1,
+        "options": [
+          [
+            "有",
+            "L"
+          ],
+          [
+            "無",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "補償の内容(細胞提供者)",
+      "selector": "#hazard_ofr",
+      "type": "text",
+      "row": {
+        "heading": "補償の内容（保険への加入等の具体的内容）",
+        "col": "L",
+        "occ": 1
+      }
+    },
+    {
+      "desc": "補償の有無(受ける者)",
+      "selector": "input[name='data[Plan][reparation]']",
+      "type": "radio",
+      "choice_from": {
+        "heading": "補償の有無",
+        "occ": 2,
+        "options": [
+          [
+            "有",
+            "L"
+          ],
+          [
+            "無",
+            "R"
+          ]
+        ],
+        "marked": "■"
+      }
+    },
+    {
+      "desc": "補償の内容(受ける者)",
+      "selector": "#hazard_rsv",
+      "type": "text",
+      "row": {
+        "heading": "補償の内容（保険への加入等の具体的内容）",
+        "col": "L",
+        "occ": 2
+      }
+    },
+    {
+      "_note": "★7 その他。教育/苦情/役務内容/役務提供者。",
+      "desc": "教育又は研修の方法",
+      "selector": "#other_training",
+      "type": "text",
+      "row": {
+        "heading": "教育又は研修の方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "苦情及び問合せへの対応",
+      "selector": "#other_cmp",
+      "type": "text",
+      "row": {
+        "heading": "苦情及び問合せへの対応に関する体制の整備状況",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "役務提供の内容",
+      "selector": "#other_provision",
+      "type": "text",
+      "row": {
+        "heading": "役務提供の内容",
+        "col": "L",
+        "occ": 1
+      }
+    },
+    {
+      "desc": "役務提供者の名称",
+      "selector": "#other_provider",
+      "type": "text",
+      "row": {
+        "heading": "役務提供の内容",
+        "col": "L",
+        "occ": 2
+      }
+    },
+    {
+      "_note": "★画面ラベル準拠の長文欄。selector/cellはdump(03_logs/web_fields_dump.txt)とユーザー指定(01様式Excel)で確定済み。",
+      "desc": "再生医療等の内容(平易な表現含む)",
+      "selector": "#mcare_detail",
+      "type": "text",
+      "row": {
+        "heading": "再生医療等の内容をできる限り平易な表現",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "細胞提供者の選定方法",
+      "selector": "#correct_slct",
+      "type": "text",
+      "row": {
+        "heading": "細胞提供者の選定方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "細胞提供者及び代諾者に対する説明及び同意の内容",
+      "selector": "#cell_donor_agreement",
+      "type": "text",
+      "row": {
+        "heading": "細胞提供者及び代諾者に対する説明及び同意の内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "安全性についての検討内容",
+      "selector": "#safe_safety",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "再生医療等の意義",
+        "until": "1.2."
+      },
+      "row": {
+        "heading": "提供する再生医療等の安全性についての検討内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "妥当性についての検討内容",
+      "selector": "#safe_valid",
+      "type": "text",
+      "row": {
+        "heading": "提供する再生医療等の妥当性についての検討内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "適格性の確認方法",
+      "selector": "#correct_chk",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.2. 患者の適格性確認",
+        "until": "1.3."
+      },
+      "row": {
+        "heading": "細胞提供者の適格性の確認方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "投与の可否の決定方法",
+      "selector": "#safe_profit",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.6. 特定細胞加工物の提供の可否決定",
+        "until": "1.7."
+      },
+      "row": {
+        "heading": "特定細胞加工物の投与の可否の決定の方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "提供終了後の措置(追跡調査)",
+      "selector": "#safe_finished",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.7. 再生医療等の提供後のフォローアップ",
+        "until": "1.8."
+      },
+      "row": {
+        "heading": "再生医療等の提供終了後の措置の内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "試料及び細胞加工物の保管期間",
+      "selector": "#safe_workpiece",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.8.3. 試料の保存",
+        "until": "1.8.4."
+      },
+      "row": {
+        "heading": "試料及び細胞加工物の一部の保管期間",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "疾病等発生時の報告体制",
+      "selector": "#safe_serious",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.8.4. 疾病等の発生における報告体制",
+        "until": "1.8.5."
+      },
+      "row": {
+        "heading": "疾病等の発生時における報告体制の内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "個人情報の取扱いの方法",
+      "selector": "#other_info",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "1.8.5. 患者の個人情報の取扱い",
+        "until": "1.8.6."
+      },
+      "row": {
+        "heading": "個人情報の取扱いの方法",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "安全性の疑義時の措置",
+      "selector": "#safety_doubts",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "2.3. 細胞の安全性に関する疑義",
+        "until": "2.4."
+      },
+      "row": {
+        "heading": "細胞の安全性に関する疑義が生じた場合の措置の内容",
+        "col": "L"
+      }
+    },
+    {
+      "desc": "情報の把握のための措置",
+      "selector": "#information_grasp",
+      "type": "text",
+      "docx": {
+        "file_contains": "2 提供",
+        "heading": "2.4. 再生医療等を受ける者の健康状態",
+        "until": "2.5."
+      },
+      "row": {
+        "heading": "再生医療等を受ける者に関する情報の把握のための措置の内容",
+        "col": "L"
+      }
+    },
     "___cell=出力様式xlsxのセルを最優先で参照（手直し反映）。無ければ source(ヒアリング)。docx例: 長文欄を出力Wordの見出しから拾う ___",
     "___例) {\"desc\":\"選定方法\",\"selector\":\"#correct_slct\",\"docx\":{\"file_contains\":\"様式第一の二\",\"heading\":\"細胞提供者の選定方法\",\"until\":\"細胞提供者の適格性\"}} ___",
     "___3種で変更: output_folder_contains→『3種筋腱靭帯系PRP』/ 再生医療名称source→再生医療②/ 分類→第三種/ 委員会構成→commission_type2/ 疾患名→筋腱靭帯 / 各cellは3種様式で1行ずれるため要調整 ___"

@@ -301,6 +301,95 @@ def _read_cells(ws, spec):
     return "\n".join(parts)
 
 
+def _parse_date_parts(raw):
+    """日付セルを (年, 月, 日) に解釈する。Excelの書き方の違いを吸収する：
+         ・datetime/date          （日付書式のセル）
+         ・「2026年 6月 15日」「2026/6/15」（文字列）
+         ・46220 のようなシリアル値（日付書式が付いていないと数値のまま入る）
+       未確定（XXXX年 等）や解釈不能なら None を返す（→ 欄は空のまま）。"""
+    if raw is None:
+        return None
+    if isinstance(raw, (datetime.datetime, datetime.date)):
+        return (raw.year, raw.month, raw.day)
+
+    def _from_serial(n):
+        try:
+            n = float(n)
+        except Exception:
+            return None
+        if not (20000 <= n <= 80000):                    # 1954年頃〜2119年頃のみ日付とみなす
+            return None
+        d = datetime.date(1899, 12, 30) + datetime.timedelta(days=int(n))
+        return (d.year, d.month, d.day)
+
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return _from_serial(raw)
+    s = TX.clean(raw)
+    if not s:
+        return None
+    mt = (_re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", s)
+          or _re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", s))
+    if mt:
+        return (int(mt.group(1)), int(mt.group(2)), int(mt.group(3)))
+    if _re.fullmatch(r"\d{5}(\.\d+)?", s):               # 文字列化されたシリアル値
+        return _from_serial(s)
+    return None
+
+
+def _date_part(raw, tf):
+    """_parse_date_parts の結果を Web の選択肢に合わせて返す（年=2026 / 月=07 / 日=17）。"""
+    p = _parse_date_parts(raw)
+    if not p:
+        return ""
+    y, m, d = p
+    return {"date_year": str(y), "date_month": "%02d" % m, "date_day": str(d)}.get(tf, "")
+
+
+def _find_heading_row(ws, heading, occ=1, exact=False, head_cols=("B", "C", "D")):
+    """見出し文字列に一致する行番号を返す。無ければ None。
+         occ   … 同じ見出しが複数ある時、何個目か（実施責任者/事務担当者の「氏名」等）
+         exact … True で完全一致（「所属機関」が「所属機関の郵便番号」に誤ヒットするのを防ぐ）"""
+    if not heading or ws is None:
+        return None
+    n = 0
+    for r in range(1, ws.max_row + 1):
+        for hc in head_cols:
+            t = TX.clean(ws["%s%d" % (hc, r)].value)
+            if not t:
+                continue
+            hit = (t == heading) if exact else (heading in t)
+            if hit:
+                n += 1
+                if n >= occ:
+                    return r
+                break
+    return None
+
+
+def _read_by_heading(ws, heading, col="L", max_span=40, skip=0, occ=1,
+                     exact=False, offset=0, span=0, head_cols=("B", "C", "D")):
+    """★見出し文字列で行を探して値を読む（行番号のハードコードを避ける）。
+       転記ツール(transcribe.py)の改修で出力Excelの行がズレても自動追従できる。
+         skip/offset … 見出し行から読み飛ばす行数（見出し行が■/□マーカーの時は1）
+         span        … 読む行数を固定（0=次の見出しが来るまで。医師の氏名/所属など1行だけ取る用）
+         occ / exact … 重複見出しの選別
+       戻り値: 連結テキスト（見出しが見つからなければ ""）。"""
+    start = _find_heading_row(ws, heading, occ, exact, head_cols)
+    if not start:
+        return ""
+    begin = start + max(skip, offset)
+    stop = (begin + span) if span > 0 else min(start + max_span, ws.max_row + 1)
+    parts = []
+    for r in range(begin, min(stop, ws.max_row + 1)):
+        if span <= 0 and r > start and \
+           any(TX.clean(ws["%s%d" % (hc, r)].value) for hc in head_cols):
+            break                                        # 次の見出しが来たら終了
+        v = TX.clean(ws["%s%d" % (col, r)].value)
+        if v:
+            parts.append(v)
+    return "\n".join(parts)
+
+
 def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
     """フィールドの入力値を決める。★出力(アウトプット)を最優先：
        cell/cells=様式xlsxのセル（単一/範囲/複数） / docx=出力Wordの見出しセクション。
@@ -311,18 +400,65 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
     cf = fld.get("choice_from")
     if cf and out_ws is not None:
         marked = cf.get("marked", "■")
+        # heading指定なら見出しで行を特定し、options の第2要素を「列文字」として扱う
+        # （例: {"heading":"補償の有無","options":[["有","L"],["無","R"]]}）。
+        # heading無しなら従来どおり第2要素はセル番地（例 "L148"）。
+        hrow = None
+        if cf.get("heading"):
+            hrow = _find_heading_row(out_ws, cf["heading"], int(cf.get("occ", 1)))
+            if not hrow:
+                return ""
         for opt in cf.get("options", []):
             if not (isinstance(opt, (list, tuple)) and len(opt) >= 2):
                 continue
             label, cref = opt[0], opt[1]
-            cv = TX.clean(out_ws[cref].value)
+            ref = ("%s%d" % (cref, hrow)) if hrow else cref
+            cv = TX.clean(out_ws[ref].value)
             if cv and marked in cv:
                 return label
 
-    # ① アウトプット様式xlsxのセル優先（単一/範囲/複数セルの結合に対応）
+    # ①-A ★見出しで行を探して読む（行番号ハードコードより優先。レイアウト変更に強い）
+    #      書式: "row": { "heading": "細胞提供者の選定方法", "col": "L" }
+    rowspec = fld.get("row")
+    if isinstance(rowspec, dict) and out_ws is not None:
+        if rowspec.get("tf") in ("date_year", "date_month", "date_day"):
+            # ★日付はセルの生値を読む（TX.cleanで文字列化するとシリアル値/日付型の情報が落ちるため）
+            hr = _find_heading_row(out_ws, rowspec.get("heading", ""),
+                                   int(rowspec.get("occ", 1)),
+                                   bool(rowspec.get("exact", False)))
+            if not hr:
+                return ""
+            r0 = hr + int(rowspec.get("offset", rowspec.get("skip", 0)))
+            return _date_part(out_ws["%s%d" % (rowspec.get("col", "L"), r0)].value,
+                              rowspec["tf"])
+        v = _read_by_heading(out_ws, rowspec.get("heading", ""),
+                             rowspec.get("col", "L"),
+                             int(rowspec.get("max_span", 40)),
+                             int(rowspec.get("skip", 0)),
+                             int(rowspec.get("occ", 1)),
+                             bool(rowspec.get("exact", False)),
+                             int(rowspec.get("offset", 0)),
+                             int(rowspec.get("span", 0)))
+        if rowspec.get("tf") in ("date_year", "date_month", "date_day") and v:
+            mt = (_re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", v)
+                  or _re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", v))
+            if not mt:
+                return ""                                # 日付未確定（XXXX年 等）→空
+            y, m, d = int(mt.group(1)), int(mt.group(2)), int(mt.group(3))
+            return {"date_year": str(y), "date_month": "%02d" % m,
+                    "date_day": str(d)}[rowspec["tf"]]
+        if v:
+            return v
+
+    # ①-B アウトプット様式xlsxのセル優先（単一/範囲/複数セルの結合に対応）
     cell = fld.get("cell") or fld.get("cells")
     if cell and out_ws is not None:
         tf = fld.get("cell_tf")
+        if tf in ("date_year", "date_month", "date_day"):
+            # 日付セルを 年/月/日 に分解（Web側が年月日の3プルダウンのため）。
+            # datetime / 「2026年 6月 15日」/ シリアル値(46220) のどれでも解釈する。
+            first = cell[0] if isinstance(cell, list) else str(cell).split(":")[0]
+            return _date_part(out_ws[first].value, tf)
         if tf in ("pref", "addr_body", "zip"):
             # 住所/郵便番号の分割は単一セル前提（範囲指定時は先頭セルを使用）
             first = cell[0] if isinstance(cell, list) else str(cell).split(":")[0]
@@ -357,7 +493,8 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
             pref, body = _pref_split(addr)
             return pref if t == "pref" else body
         if t == "today" and src.get("fmt") in ("year", "month", "day"):
-            import datetime
+            # ※ここで import datetime すると関数全体で datetime がローカル扱いになり、
+            #   上の date_year/month/day 分解で UnboundLocalError になる（モジュール先頭で import 済み）。
             d = datetime.datetime.now()
             return {"year": str(d.year), "month": "%02d" % d.month, "day": str(d.day)}[src.get("fmt")]
         v, _ = TX.resolve(src, hearing, kits)
@@ -562,6 +699,82 @@ def build_plan(mapping, hearing, kits, out_ws, out_folder):
     return plan
 
 
+def _qualify_sel(selector, ftype):
+    """★CakePHP系フォームは checkbox/radio の直前に「同じname」の <input type="hidden"> を出力する。
+       type未指定のセレクタ（例 input[name='data[Plan][cells_type1]']）はその hidden を先に掴んでしまい、
+       hidden にはラベルが無いため「クリック対象なし」でスキップされる（＝入らない原因）。
+       → checkbox/radio は type を明示して“実体”だけを掴む。"""
+    s = (selector or "").strip()
+    if not s or ftype not in ("checkbox", "radio"):
+        return s
+    if "type=" in s.replace(" ", ""):
+        return s                                          # 既にtype指定済み
+    if s.startswith("input["):
+        return "input[type='%s']%s" % (ftype, s[len("input"):])
+    return s
+
+
+def _visible_label(page, el, exact_selector=""):
+    """checkbox/radio の“直近ラベル(closest)”を可視なら返す。無ければ None。
+       ★重要: 「そのinputを内包するlabel」を locator の .first で取ると、DOM順で“外側の親label”を
+       掴んでしまい、クリックが別の選択肢に当たる（＝丸は選ばれない／四角は二重トグルでOFF）。
+       そこで JS の closest('label') で直近ラベルに一時マークを付け、それだけを確実に掴む。"""
+    # ① 直近ラベル（closest）に一時マークを付けて取得＝最も確実
+    try:
+        ok = el.evaluate(
+            "e => { const l = e.closest('label'); if (!l) return false;"
+            " document.querySelectorAll('[data-pwlab]').forEach(x => x.removeAttribute('data-pwlab'));"
+            " l.setAttribute('data-pwlab', '1'); return true; }")
+        if ok:
+            lab = page.locator("label[data-pwlab='1']").first
+            if lab.count() > 0 and lab.is_visible():
+                return lab
+    except Exception:
+        pass
+    # ② label[for=id]
+    idv = ""
+    try:
+        idv = el.get_attribute("id") or ""
+    except Exception:
+        idv = ""
+    if idv:
+        try:
+            lab = page.locator("label[for=\"%s\"]" % idv).first
+            if lab.count() > 0 and lab.is_visible():
+                return lab
+        except Exception:
+            pass
+    return None
+
+
+def _click_to_state(page, el, want, exact_selector=""):
+    """★可視ラベルを“実クリック”して checked を want にする（人の操作と同じ＝サイトのハンドラが発火）。
+       checkedを直接代入するとサイトが認識しない（画面・検証が更新されない）ため必ずクリックする。
+       戻り値: "ok" / "absent"(タブ未表示→後で) / "ng"(クリックしたが状態が合わない)。"""
+    lab = _visible_label(page, el, exact_selector)
+    if lab is None:
+        return "absent"
+
+    def _state():
+        # ★JSで checked を直接読む。is_checked() は例外を投げることがあり、
+        #   それを「未チェック」と誤判定して“もう一度クリック→OFFに戻す”事故になるため。
+        try:
+            return bool(el.evaluate("e => !!e.checked"))
+        except Exception:
+            return None
+
+    if _state() == want:
+        return "ok"
+    try:
+        lab.click()                                      # 直近ラベルを1回だけ実クリック（人と同じ）
+    except Exception:
+        return "ng"
+    page.wait_for_timeout(400)                           # サイトのハンドラが状態を確定するまで待つ
+    # ★追加クリックはしない：合わない場合は二重トグル等が起きている証拠なので、
+    #   もう一度押しても戻るだけ（＝“入って消える”の原因）。正直に ng を返して報告する。
+    return "ok" if _state() == want else "ng"
+
+
 def _click_labeled_input(page, el):
     """checkbox/radio を、対応する“可視ラベル”を実クリックしてON（カスタム装飾UI対応）。
        ★input直接操作ではフレームワークのstateが更新されず反映されないため、実クリックする。
@@ -636,7 +849,8 @@ def _place_field(page, item):
     ftype = (fld.get("type") or "text").lower()
     try:
         if ftype == "radio":
-            grp = (fld.get("selector") or "").strip()
+            # ★type付きに正規化（同名hidden inputを掴まないように）
+            grp = _qualify_sel(fld.get("selector"), "radio")
             if not grp:
                 return "empty"
             radios = page.locator(grp)
@@ -666,18 +880,29 @@ def _place_field(page, item):
                     pass
             if target is None:
                 return "no-choice"
-            # ★クリックせず checked を直接セット＋change発火（labelハンドラの二重トグル回避）
+            # 対象ラジオを1つに絞れるCSS（value属性）を作り、それを内包するlabelを確実に取得する
+            exact = ""
             try:
-                target.evaluate(_SET_CHECKED_JS, True)
-            except Exception as ex:
-                item["error"] = repr(ex)
-                return "error"
-            try:
-                return "placed" if target.is_checked() else "error"
+                vattr = target.get_attribute("value") or ""
+                if vattr:
+                    exact = "%s[value='%s']" % (grp, vattr)
             except Exception:
+                pass
+            # ★可視ラベルを実クリック（タブ未表示なら absent＝そのタブを開いた時に再試行）
+            st = _click_to_state(page, target, True, exact)
+            if st == "absent":
+                return "absent"
+            if st == "ok":
                 return "placed"
+            item["error"] = "ラベルをクリックしたが選択状態にならない"
+            return "error"
 
-        loc = _locate(page, fld)
+        if ftype == "checkbox":
+            # ★type付きに正規化して掴む（同名hidden inputを掴むとラベルが無く操作不能になる）
+            qsel = _qualify_sel(fld.get("selector"), "checkbox")
+            loc = page.locator(qsel).first if qsel else _locate(page, fld)
+        else:
+            loc = _locate(page, fld)
         if loc is None or loc.count() == 0:
             return "absent"
         if not val:
@@ -689,23 +914,26 @@ def _place_field(page, item):
         except Exception:
             pass
         if tag == "select" or ftype == "select":
+            # ★可視でなければ後回し（別タブのselectに select_option すると可視待ちで数十秒固まる）
+            try:
+                if not loc.is_visible():
+                    return "absent"
+            except Exception:
+                pass
             try:
                 loc.select_option(label=val)
             except Exception:
                 loc.select_option(value=val)
         elif ftype == "checkbox" or typ == "checkbox":
-            # ★クリック（トグル）ではなく checked を直接セット＋change発火。
-            #   labelへのクリック伝播で二重トグル（差し引きゼロ）になる問題を回避する。
+            # ★可視ラベルを実クリック（checkedの直接代入だとサイトが認識せず画面・検証が更新されない）
             want = str(val) not in ("", "0", "false", "無", "×")
-            try:
-                loc.first.evaluate(_SET_CHECKED_JS, want)
-            except Exception as ex:
-                item["error"] = repr(ex)
-                return "error"
-            try:
-                return "placed" if loc.first.is_checked() == want else "error"
-            except Exception:
+            st = _click_to_state(page, loc.first, want, _qualify_sel(fld.get("selector"), "checkbox"))
+            if st == "absent":
+                return "absent"                        # タブ未表示→そのタブを開いた時に再試行
+            if st == "ok":
                 return "placed"
+            item["error"] = "ラベルをクリックしたがチェック状態にならない"
+            return "error"
         else:
             # テキスト/テキストエリアは可視でないと fill できない（別タブなら後で）
             try:
@@ -1087,6 +1315,12 @@ def run_auto(page, mapping, hearing, kits):
         if out_folder else "※ アウトプット未検出 → ヒアリングから取得（先に転記実行.batを推奨）"
     print(src_line)
 
+    # ★1操作あたりの待機上限（既定30秒だと、別タブの要素を触った時に長時間フリーズするため）
+    try:
+        page.set_default_timeout(int(mapping.get("action_timeout_ms", 8000)))
+    except Exception:
+        pass
+
     plan = build_plan(mapping, hearing, kits, out_ws, out_folder)
     max_sections = int(mapping.get("max_sections", 25))
     print("自動一括入力を開始します（%d欄・最大%dタブ）…" % (len(plan), max_sections))
@@ -1120,6 +1354,36 @@ def run_auto(page, mapping, hearing, kits):
                 if _click_tab(page, tabname):
                     page.wait_for_timeout(300)
                     _fill_pass(tabname + "(再)")
+
+        # ★最終確定パス：一度入ったのにサイト側で解除されたチェックを入れ直す
+        #   （他項目の入力やタブ切替で連動リセットされる事象への対策。最大2巡）
+        _ON_JS = "(s) => { let o=false; document.querySelectorAll(s).forEach(e => { if (e.checked) o = true; }); return o; }"
+        for _round in range(1):                          # 1巡のみ（何度も押すと戻るだけなので）
+            reverted = []
+            for item in plan:
+                fld = item["fld"]
+                ft = (fld.get("type") or "").lower()
+                sel = _qualify_sel(fld.get("selector"), ft)      # 同名hiddenを除外して実体を見る
+                if ft not in ("checkbox", "radio") or not sel:
+                    continue
+                want_on = True if ft == "radio" else \
+                    (str(item["val"]) not in ("", "0", "false", "無", "×"))
+                if not want_on:
+                    continue
+                try:
+                    if not page.evaluate(_ON_JS, sel):
+                        item["status"] = "pending"       # 解除されている→もう一度入れ直す
+                        reverted.append(item["desc"])
+                except Exception:
+                    continue
+            if not reverted:
+                break
+            print("  ↻ 解除されたチェックを入れ直します: %s" % ", ".join(reverted))
+            for tabname in tabs:
+                if any(i["status"] == "pending" for i in plan):
+                    if _click_tab(page, tabname):
+                        page.wait_for_timeout(400)
+                        _fill_pass(tabname + "(確定)")
     else:
         for sec in range(max_sections):
             _fill_pass("タブ%d" % (sec + 1))
@@ -1150,6 +1414,32 @@ def run_auto(page, mapping, hearing, kits):
         R.append("\n【見つからない：どのタブにも欄が無い】← selector/label の見直しが必要")
         for i in notfound:
             R.append("  - %s  (selector=%s)" % (i["desc"], sel_of(i)))
+        # チェック/ラジオが absent のままの場合、なぜ可視ラベルが取れないのかを実DOMで診断
+        _CHK_DIAG_JS = r"""
+        (sel) => {
+          const e = document.querySelector(sel);
+          if (!e) return {found:false};
+          const lab = e.closest('label');
+          const rect = lab ? lab.getBoundingClientRect() : null;
+          const cs = lab ? getComputedStyle(lab) : null;
+          let panel = e.closest('[role=tabpanel]') || e.closest('div[id^=tab]');
+          const pcs = panel ? getComputedStyle(panel) : null;
+          return { found:true, checked:e.checked, disabled:e.disabled,
+                   hasLabel: !!lab,
+                   labW: rect ? Math.round(rect.width) : -1,
+                   labH: rect ? Math.round(rect.height) : -1,
+                   labDisplay: cs ? cs.display : '', labVis: cs ? cs.visibility : '',
+                   panelId: panel ? (panel.id || panel.className || '') : '(none)',
+                   panelDisplay: pcs ? pcs.display : '' };
+        }"""
+        for i in notfound:
+            if (i["fld"].get("type") or "").lower() not in ("checkbox", "radio"):
+                continue
+            try:
+                d = page.evaluate(_CHK_DIAG_JS, sel_of(i))
+                R.append("    診断[%s]: %s" % (i["desc"], d))
+            except Exception as e:
+                R.append("    診断[%s]: 取得失敗 %r" % (i["desc"], e))
     if nochoice:
         R.append("\n【ラジオ未選択：選択肢が一致せず】← choice の文言を確認")
         for i in nochoice:
@@ -1160,7 +1450,7 @@ def run_auto(page, mapping, hearing, kits):
             R.append("  - %s  %s" % (i["desc"], i["error"]))
 
     # ---- チェック/ラジオの実状態を検証（本当に選択されたか）★JSで el.checked を直接読む（確実）----
-    chk_targets = [(i, (i["fld"].get("selector") or "").strip())
+    chk_targets = [(i, _qualify_sel(i["fld"].get("selector"), (i["fld"].get("type") or "").lower()))
                    for i in plan
                    if (i["fld"].get("type") or "").lower() in ("checkbox", "radio")
                    and (i["fld"].get("selector") or "").strip()]
