@@ -202,12 +202,13 @@ INDEX_HTML = r"""<!doctype html>
   <div class="section-t" style="margin-top:0">🌐 WEB転記（e-再生医療フォームへ自動入力）</div>
   <div class="card" id="webCard">
     <div class="muted" style="margin-bottom:12px">
-      ボタンでブラウザが開きます。<b>ログインと画面遷移はご自身で操作</b>し、対象フォームを表示したら
-      「このページに自動入力」を押すと、生成済みの書類（<code>02_output</code>）の内容が各欄に入力されます。
-      <b>送信はしません</b>（最終確認と送信は必ず人が行ってください）。複数ページのフォームは、次の画面を表示して
-      もう一度「自動入力」を押せば続けて入力できます。<br>
-      <b>🚀 一括モード</b>：先頭タブを表示して「一括入力→一時保存」を押すと、<b>全タブを自動で送りながら入力し、最後に一時保存（下書き保存）まで自動</b>で行います。
-      不備で止まった場合は、どの欄・どのメッセージで止まったかをレポート表示します（<b>送信は絶対にしません</b>）。
+      「ブラウザを開いて開始」でブラウザが開きます。<b>plan01フォームの先頭タブを表示</b>したら
+      「一括入力を実行」を押してください。あとは<b>全部自動</b>です：<br>
+      　全タブに入力（生成済み書類 <code>02_output</code> の内容）→ <b>一時保存</b> → 受付番号・パスワード取得
+      　→ 保存データ編集に戻る → <b>添付書類をアップロード</b> → 再度一時保存<br>
+      終わると <code>02_output</code> 直下に<b>結果サマリ</b>（受付番号・パスワード／要対応の項目と場所）が出ます。<br>
+      <b>送信・申請は絶対にしません</b>（最終確認と送信は必ず人が行ってください）。
+      文字数が上限を超える欄は、本文の代わりに「文字数超過」と記入して保存を通し、レポートで手直し箇所をお知らせします。
     </div>
 
     <!-- Playwright 未導入のときの案内 -->
@@ -220,9 +221,8 @@ INDEX_HTML = r"""<!doctype html>
     <div id="webHint" class="muted" style="margin-bottom:12px"></div>
 
     <div class="run-row" id="webControls">
-      <button class="btn" id="webStart">🌐 ブラウザを開いて開始（タブごと）</button>
-      <button class="btn" id="webAuto">🚀 一括入力→一時保存</button>
-      <button class="btn ghost" id="webFill" disabled>⬇ このページに自動入力</button>
+      <button class="btn" id="webAuto">🚀 ブラウザを開いて開始（一括転記）</button>
+      <button class="btn ghost" id="webFill" disabled>▶ 一括入力を実行</button>
       <button class="btn ghost" id="webQuit" disabled>✔ 終了</button>
       <button class="btn ghost sm" id="webStop" disabled>⏹ 強制停止</button>
       <span class="muted" id="webState"></span>
@@ -463,15 +463,13 @@ function webLineClass(line){
   return "";
 }
 function webSetControls(){
-  $("#webStart").disabled = webRunning;
   $("#webAuto").disabled  = webRunning;
   $("#webFill").disabled  = !webRunning;
   $("#webQuit").disabled  = !webRunning;
   $("#webStop").disabled  = !webRunning;
   $("#webDump").disabled  = webRunning;
   $("#webFill").textContent = (webMode==="dump") ? "📋 抽出を実行"
-    : (webMode==="auto") ? "▶ 一括入力を実行（先頭タブで押す）"
-    : "⬇ このページに自動入力";
+    : "▶ 一括入力を実行（先頭タブで押す）";
 }
 
 async function webRefreshStatus(){
@@ -503,9 +501,7 @@ function webStartSession(mode){
   webEs.addEventListener("ready", ()=>{
     $("#webState").textContent = (mode==="dump")
       ? "ブラウザで対象フォームを表示し、「抽出を実行」を押してください。"
-      : (mode==="auto")
-      ? "ブラウザでplan01の先頭タブを表示し、「一括入力を実行」を押してください（全タブ自動→一時保存）。"
-      : "ブラウザでログイン→対象フォームを表示し、「このページに自動入力」を押してください。";
+      : "ブラウザでplan01の先頭タブを表示し、「一括入力を実行」を押してください（全タブ自動→一時保存→添付）。";
   });
   webEs.addEventListener("log", e=>{
     const line=JSON.parse(e.data).line; webLog(line, webLineClass(line));
@@ -532,9 +528,9 @@ async function webSend(cmd){
     const r=await fetch("/api/web/send",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({cmd})});
     if(!r.ok){ const j=await r.json().catch(()=>({})); toast(j.error||"送信に失敗しました"); }
-    else if(cmd==="fill") toast(webMode==="auto"
-      ? "一括入力→一時保存を実行中です（レポートをご確認ください）"
-      : "このページに自動入力しました（内容をご確認ください）");
+    else if(cmd==="fill") toast(webMode==="dump"
+      ? "フォーム項目を抽出しました"
+      : "一括入力→一時保存→添付を実行中です（完了までしばらくお待ちください）");
   }catch(_){ toast("送信に失敗しました"); }
 }
 async function webStopHard(){
@@ -557,7 +553,6 @@ function webSetup(){
   });
 }
 
-$("#webStart").onclick=()=>webStartSession("fill");
 $("#webAuto").onclick =()=>webStartSession("auto");
 $("#webFill").onclick =()=>webSend("fill");
 $("#webQuit").onclick =()=>webSend("quit");
