@@ -1162,137 +1162,210 @@ def _manual_attach_table(out_folder):
     return lines
 
 
+# 添付書類パネルの実DOMを診断するJS（--attach で構造を確認するため）
+ATTACH_DIAG_JS = r"""
+() => {
+  const cut = (s,n) => (s||'').replace(/\s+/g,' ').trim().slice(0,n);
+  const vis = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  let panel = document.querySelector('#tab9');
+  if (!panel) {
+    const t = [...document.querySelectorAll('[role=tab]')].find(e => /添付書類/.test(e.innerText||''));
+    if (t) { const id = t.getAttribute('aria-controls'); if (id) panel = document.getElementById(id); }
+  }
+  const scope = panel || document;
+  const clickables = [...scope.querySelectorAll('button,a,label,input[type=button],input[type=submit]')]
+      .map(e => ({ tag:e.tagName.toLowerCase(), text:cut(e.innerText||e.value,26), vis:vis(e) }))
+      .filter(x => x.text);
+  const files = [...document.querySelectorAll('input[type=file]')]
+      .map(e => ({ id:e.id||'', name:e.name||'', vis:vis(e), outer:cut(e.outerHTML,90) }));
+  return {
+    url: location.href,
+    panelFound: !!panel,
+    panelId: panel ? (panel.id || '') : '',
+    panelDisplay: panel ? getComputedStyle(panel).display : '',
+    panelText: panel ? cut(panel.innerText, 400) : '(パネル未検出)',
+    fileInputs: files,
+    clickables: clickables.slice(0, 25),
+    totalButtons: document.querySelectorAll('button').length
+  };
+}
+"""
+
+
+def _attach_slot(num, mapping=None):
+    """★出力ファイルの先頭番号 → 添付スロット番号。
+       実DOMより #btn_upload_fileupload<N> の N が書類番号（1..15、17=その他）。
+       「01」「4.5」等は attach_slot_map で明示、無ければ整数部を使う。"""
+    n = str(num).strip()
+    smap = (mapping or {}).get("attach_slot_map") or {}
+    if n in smap:
+        return str(smap[n])
+    if "." in n:
+        n = n.split(".")[0]
+    return n
+
+
+def _attach_input_sel(num, mapping=None):
+    """添付スロット番号 → ファイル入力欄のセレクタ。"""
+    return "#btn_upload_fileupload%s" % _attach_slot(num, mapping)
+
+
+def _attach_targets(out_folder, mapping, only=""):
+    """出力フォルダ → { スロット番号: [ファイル…] }。
+       ・対象拡張子は docx/xlsx/pdf（略歴書は xlsx のことがある）
+       ・同じスロットに複数入る場合（医師人数分の略歴書等）はまとめる（input は multiple）"""
+    files = []
+    for pat in mapping.get("attach_exts", ["*.docx", "*.xlsx", "*.pdf"]):
+        files += glob.glob(os.path.join(out_folder, pat))
+    skips = tuple(mapping.get("attach_skip_prefix", ["~$"]))
+    groups = {}
+    for f in sorted(files):
+        b = os.path.basename(f)
+        if b.startswith(skips):
+            continue
+        n = _lead_num(b)
+        if not n or (only and n != only):
+            continue
+        groups.setdefault(_attach_slot(n, mapping), []).append(f)
+    return groups
+
+
+def _upload_one(page, sel, paths):
+    """1スロットにファイル（複数可）をセットして「アップロード」を押す。
+       戻り値: (ok:bool, msg:str)。※送信・申請は行わない（添付のみ）。"""
+    if isinstance(paths, str):
+        paths = [paths]
+    fi = page.locator(sel)
+    if fi.count() == 0:
+        return False, "ファイル入力欄が見つかりません（%s）" % sel
+    try:
+        fi.first.set_input_files([os.path.abspath(p) for p in paths])
+    except Exception as e:
+        return False, "セット失敗 %r" % e
+    page.wait_for_timeout(700)
+    up = page.locator("xpath=//*[self::button or self::a]"
+                      "[contains(normalize-space(.),'アップロード')]")
+    for i in range(up.count()):
+        try:
+            if up.nth(i).is_visible():
+                up.nth(i).click()
+                page.wait_for_timeout(2200)
+                return True, "アップロード済"
+        except Exception:
+            pass
+    return True, "セットのみ（アップロードボタンが見つからず→手動で押してください）"
+
+
+def _latest_receipt():
+    """03_logs の最新レポートから 受付番号/パスワード を拾う（添付テストのショートカット用）。
+       戻り値: (受付番号, パスワード, 元ファイル名)。見つからなければ空。"""
+    files = sorted(glob.glob(os.path.join(LOGDIR, "web_autofill_report_*.txt")),
+                   key=os.path.getmtime, reverse=True)
+    for f in files:
+        try:
+            t = io.open(f, encoding="utf-8", errors="replace").read()
+        except Exception:
+            continue
+        m1 = _re.search(r"受付番号:\s*([0-9A-Za-z\-]+)", t)
+        if m1:
+            m2 = _re.search(r"パスワード:\s*([0-9A-Za-z\-]+)", t)
+            return m1.group(1), (m2.group(1) if m2 else ""), os.path.basename(f)
+    return "", "", ""
+
+
+def run_attach_one(page, mapping, only=""):
+    """★添付（--attach）。一時保存済みの下書きを開いた状態で実行する。
+       出力フォルダの各ファイルを、先頭番号 → #btn_upload_fileupload<N> の欄へ貼る。
+       only（例 "2"）を指定するとその1件だけ。※送信・申請はしない。"""
+    _out_ws, out_folder = load_output_ctx(mapping)
+    R = ["=== 添付（--attach）  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")]
+    if not out_folder:
+        R.append("アウトプット未検出。先に転記実行してください。")
+        print("\n".join(R))
+        return
+    R.append("参照アウトプット: %s" % os.path.basename(out_folder))
+
+    groups = _attach_targets(out_folder, mapping, only)
+    if not groups:
+        R.append("対象ファイルがありません（only=%s）" % only)
+        print("\n".join(R))
+        return
+
+    _click_tab(page, mapping.get("attach_tab", "添付書類"))
+    page.wait_for_timeout(2000)
+
+    if page.locator("input[type='file']").count() == 0:
+        try:
+            d = page.evaluate(ATTACH_DIAG_JS)
+        except Exception as e:
+            d = {"error": repr(e)}
+        R.append("\n★ ファイル入力欄がありません＝【一時保存した下書き】を開けていません。")
+        R.append("  url: %s / panelFound=%s" % (d.get("url"), d.get("panelFound")))
+        R.append("  → 受付番号・パスワードでログインし、添付書類タブを表示してから実行してください。")
+        print("\n".join(R))
+        _write_report(R)
+        return
+
+    R.append("\n--- 添付を実行（%dスロット）---" % len(groups))
+    okn = 0
+    for slot in sorted(groups, key=lambda x: (float(x) if x.replace('.', '', 1).isdigit() else 999)):
+        paths = groups[slot]
+        ok, msg = _upload_one(page, "#btn_upload_fileupload%s" % slot, paths)
+        names = " / ".join(os.path.basename(x) for x in paths)
+        R.append("  %s スロット%-4s ← %s  … %s"
+                 % ("○" if ok else "×", slot, names, msg))
+        if ok:
+            okn += 1
+    R.append("→ %d/%d スロットを処理しました" % (okn, len(groups)))
+    R.append("※ 送信・申請はしていません。内容は画面でご確認ください。")
+
+    try:
+        shot = os.path.join(LOGDIR, "web_attach_%s.png" % datetime.datetime.now().strftime("%Y%m%d_%H%M"))
+        page.screenshot(path=shot, full_page=True)
+        R.append("\nスクリーンショット: %s" % shot)
+    except Exception:
+        pass
+    path, _ = _write_report(R)
+    print("\n".join(R))
+    if path:
+        print("\n診断を保存しました: %s" % path)
+
+
 def _attach_files(page, mapping, out_folder):
-    """④添付書類：実フォームは「ファイル選択」ボタン→OSダイアログ→「アップロード」ボタン方式。
-       各行の見出し先頭番号と、出力フォルダのファイル先頭番号を突き合わせて自動添付する。
-       ※ file_chooser でダイアログにファイルを渡し、行の「アップロード」を押す（送信・申請はしない）。"""
-    _BTN_XPATH = ("xpath=//button[contains(normalize-space(.),'ファイル選択')]"
-                  " | //a[contains(normalize-space(.),'ファイル選択')]"
-                  " | //label[contains(normalize-space(.),'ファイル選択')]"
-                  " | //*[@role='button'][contains(normalize-space(.),'ファイル選択')]")
+    """④添付書類（--auto の一時保存後フローから呼ばれる）。
+       ★実DOM: <input type="file" id="btn_upload_fileupload<N>" multiple> の N が書類番号。
+         「ファイル選択」はこの input を装飾したものなので、input に直接ファイルをセットして
+         「アップロード」を押せばよい（file_chooser も不要）。
+       ※ 添付欄は【一時保存した下書き】でしか描画されないサイト仕様のため、必ず保存後に呼ぶこと。
+       ※ 送信・申請はしない。"""
     lines = []
     if not out_folder:
         return lines
-    lines.append("\n--- ④添付書類（ファイル選択→アップロードを自動化）---")
-    att_tab = mapping.get("attach_tab", "添付書類")
-    # ページ読み込み完了を待ってからタブを開く（先走り防止）
-    for st in ("domcontentloaded", "load", "networkidle"):
-        try:
-            page.wait_for_load_state(st, timeout=15000)
-        except Exception:
-            pass
-    if not _click_tab(page, att_tab):
-        lines.append("  添付書類タブを開けませんでした（タブ名: %s）" % att_tab)
+    lines.append("\n--- ④添付書類 ---")
+    if not _click_tab(page, mapping.get("attach_tab", "添付書類")):
+        lines.append("  添付書類タブを開けませんでした")
+        return lines
+    page.wait_for_timeout(1500)
+
+    if page.locator("input[type='file']").count() == 0:
+        lines.append("  ファイル入力欄がありません（一時保存済みの下書きを開けていない可能性）。")
+        lines.extend(_manual_attach_table(out_folder))
         return lines
 
-    # 出力フォルダの docx を先頭番号でマップ（2→「2 …」, 3→「3.医師略歴書」, 4.5→「4.5 …」等）
-    docs = [f for f in glob.glob(os.path.join(out_folder, "*.docx"))
-            if not os.path.basename(f).startswith("~$")]
-    nummap = {}
-    for f in docs:
-        n = _lead_num(os.path.basename(f))
-        if n:
-            nummap.setdefault(n, []).append(f)
-
-    # ★「ファイル選択」ボタンのある scope を探す（本体＋iframe）。遅延読み込みのため最大~15秒ポーリング。
-    #   途中で見つからなければ1回リロード＋タブ再クリック（下書き編集ページが未ロードのことがあるため）。
-    scope = None
-    for _try in range(30):
-        for fr in [page] + list(page.frames):
-            try:
-                if fr.locator(_BTN_XPATH).count() > 0:
-                    scope = fr
-                    break
-            except Exception:
-                continue
-        if scope is not None:
-            break
-        if _try == 14:                                   # 中間地点で一度リロードして再試行
-            try:
-                page.reload(wait_until="domcontentloaded")
-                for st in ("load", "networkidle"):
-                    try:
-                        page.wait_for_load_state(st, timeout=12000)
-                    except Exception:
-                        pass
-                _click_tab(page, att_tab)
-                page.wait_for_timeout(1500)
-            except Exception:
-                pass
-        page.wait_for_timeout(500)
-    if scope is None:
-        lines.append("  「ファイル選択」ボタンが見つかりません（frames=%d／~10秒待機後）。" % len(page.frames))
-        # 診断：いま画面に何があるか（タブ状態・関連テキスト・ボタン数）を出す
-        try:
-            diag = page.evaluate(r"""() => {
-              const cut=(s,n)=>(s||'').replace(/\s+/g,' ').trim().slice(0,n);
-              const act=[...document.querySelectorAll('[role=tab]')].filter(e=>/is-active|active|selected/.test(e.className)||e.getAttribute('aria-selected')==='true').map(e=>cut(e.innerText,10));
-              const hasFile=[...document.querySelectorAll('button,a,label,span,div')].filter(e=>/ファイル選択|アップロード|添付/.test(e.innerText||'')).slice(0,8).map(e=>cut(e.innerText,20));
-              const url=location.href, hash=location.hash;
-              return {activeTab:act, related:hasFile, buttons:document.querySelectorAll('button').length, url, hash};
-            }""")
-            lines.append("  診断: activeTab=%s / URL=%s%s / button数=%s"
-                         % (diag.get("activeTab"), diag.get("url"), diag.get("hash"), diag.get("buttons")))
-            lines.append("  診断: ファイル関連テキスト=%s" % diag.get("related"))
-        except Exception as e:
-            lines.append("  診断取得に失敗: %r" % e)
-        # 自動描画されないため、手動アップロード用の対応表を出す（頭の数字＝Webのスロット番号）
-        if nummap:
-            lines.append("  ―― 手動アップロード対応表（添付書類タブで各スロットに）――")
-            for n in sorted(nummap, key=lambda x: (float(x) if x.replace('.', '', 1).isdigit() else 999)):
-                for f in sorted(nummap[n]):
-                    lines.append("    スロット%s ← %s" % (n, os.path.basename(f)))
-        lines.append("  ※ 自動添付は保存後の編集ページでアップロード行が描画されず不可。上記を手動で添付してください。")
+    groups = _attach_targets(out_folder, mapping)
+    if not groups:
+        lines.append("  添付対象のファイルが見つかりません")
         return lines
-
-    try:
-        rows = scope.evaluate(ATTACH_ROWS_JS)
-    except Exception as e:
-        lines.append("  添付行の取得に失敗: %r" % e)
-        return lines
-    if not rows:
-        lines.append("  「ファイル選択」行の見出しが取得できませんでした")
-        return lines
-
-    btns = scope.locator(_BTN_XPATH)
-    total = btns.count()
-    for r in rows:
-        idx = r.get("index")
-        head = r.get("heading", "")
-        n = _lead_num(head)
-        if not n or idx is None or idx >= total:
-            continue
-        cands = nummap.get(n)
-        if not cands:                                    # 4.5→4 等の緩い一致
-            base = n.split(".")[0]
-            cands = [f for k, v in nummap.items() if k.split(".")[0] == base for f in v]
-        if not cands:
-            lines.append("  - スロット「%s」: 対応ファイル無し（番号%s）" % (head, n))
-            continue
-        f = os.path.abspath(sorted(cands)[0])
-        try:
-            with page.expect_file_chooser(timeout=8000) as fc:
-                btns.nth(idx).click()
-            fc.value.set_files(f)
-            page.wait_for_timeout(700)
-            # 直後に現れる「アップロード」ボタン（可視のもの）を押す
-            up = scope.locator("xpath=//button[contains(normalize-space(.),'アップロード')]"
-                               " | //a[contains(normalize-space(.),'アップロード')]")
-            uploaded = False
-            for j in range(up.count()):
-                try:
-                    if up.nth(j).is_visible():
-                        up.nth(j).click()
-                        uploaded = True
-                        break
-                except Exception:
-                    pass
-            page.wait_for_timeout(1800)
-            lines.append("  - スロット「%s」← %s %s" % (
-                head, os.path.basename(f),
-                "(アップロード済)" if uploaded else "(選択のみ・アップロード未押下)"))
-        except Exception as e:
-            lines.append("  - スロット「%s」: 添付失敗 %r" % (head, repr(e)))
+    okn = 0
+    for slot in sorted(groups, key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 999):
+        paths = groups[slot]
+        ok, msg = _upload_one(page, "#btn_upload_fileupload%s" % slot, paths)
+        lines.append("  %s 書類%-3s ← %s  … %s"
+                     % ("○" if ok else "×", slot,
+                        " / ".join(os.path.basename(p) for p in paths), msg))
+        if ok:
+            okn += 1
+    lines.append("  → %d/%d スロットを添付しました" % (okn, len(groups)))
     return lines
 
 
@@ -1574,6 +1647,7 @@ def run_auto(page, mapping, hearing, kits):
 def main():
     mode_dump = "--dump" in sys.argv
     mode_auto = "--auto" in sys.argv
+    mode_attach = "--attach" in sys.argv
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -1587,7 +1661,7 @@ def main():
     hearing_sheet = mapping.get("hearing_sheet", "ヒアリングシート（PRP）")
 
     hearing = kits = None
-    if not mode_dump:
+    if not mode_dump and not mode_attach:              # 添付テストはヒアリング不要（起動を速く）
         hp = find_hearing()
         hearing = TX.Hearing(hp, hearing_sheet)
         kits = hearing.prp_kits()
@@ -1597,14 +1671,45 @@ def main():
         ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
                                                     viewport={"width": 1280, "height": 900})
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        # ★添付テストは「一時保存済みの下書き」で行う必要がある（サイト仕様: 保存後でないと
+        #   アップロード部品が描画されない）。plan01へ直行すると“まっさらなフォーム”に戻って
+        #   しまうため、サイトのトップを開いて利用者が下書きへ進めるようにする。
+        start = url
+        if mode_attach:
+            # ★添付は「一時保存した下書き」でしか欄が出ないサイト仕様。下書きURLへの直行は
+            #   セッション次第で表示できないため、ログイン画面を開いて手動ログインしてもらう。
+            #   受付番号/パスワードは 03_logs の最新レポートから拾って表示する（貼り付け用）。
+            start = mapping.get("attach_login_url",
+                                "https://saiseiiryo.mhlw.go.jp/application/login/plan")
+            no, pw, src = _latest_receipt()
+            for a in sys.argv:
+                if a.startswith("--no="):
+                    no = a.split("=", 1)[1].strip()
+                    pw = ""
+            print("  ▼ログイン画面を開きます: %s" % start)
+            if no:
+                print("  ―― 直近の下書き（コピペ用）%s" % (("  ※%s より" % src) if src else ""))
+                print("      受付番号  : %s" % no)
+                print("      パスワード: %s" % (pw or "(レポートに記録なし)"))
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            page.goto(start, wait_until="domcontentloaded", timeout=60000)
         except Exception:
             pass
         print("\n▼ ブラウザが開きました（このサイトはログイン不要）。")
         if mode_dump:
             input("  対象フォームを表示したら、このウィンドウで Enter（入力欄を抽出します）…")
             dump_fields(page)
+        elif mode_attach:
+            only = ""
+            for a in sys.argv:
+                if a.startswith("--only="):
+                    only = a.split("=", 1)[1].strip()
+            print("\n  ▼添付（%s）" % ("書類%s だけ" % only if only else "アウトプットの全ファイル"))
+            print("    ①上の受付番号/パスワードでログイン（手動）")
+            print("    ②「添付書類」タブを開き『ファイル選択』が見える状態にする")
+            input("  そこまで進めたら、このウィンドウで Enter…")
+            run_attach_one(page, mapping, only)
+            input("\n  結果を確認したら Enter でブラウザを閉じます…")
         elif mode_auto:
             input("  plan01フォームの先頭タブを表示したら、このウィンドウで Enter（自動一括入力→一時保存を開始）…")
             print("  ※ 全タブを自動で送りながら入力し、最後に一時保存まで行います（送信はしません）。")

@@ -21,17 +21,27 @@ echo ============================================================
 echo   1 : Auto-fill (step)  (fill per tab, press Enter between tabs)
 echo   A : Auto-fill (bulk)  (all tabs at once -^> temp-save) *never submits*
 echo   2 : Dump fields       (--dump / to build the mapping)
+echo   T : Attach TEST       (--attach / try ONE file on the attach tab)
 echo   3 : Setup             (install Playwright, first time only)
 echo   Q : Quit
 echo ------------------------------------------------------------
 set "sel="
-set /p "sel=Type 1/A/2/3/Q and press Enter: "
+set /p "sel=Type 1/A/2/T/3/Q and press Enter: "
 if /i "%sel%"=="1" goto fill
 if /i "%sel%"=="A" goto autofill
 if /i "%sel%"=="2" goto dump
+if /i "%sel%"=="T" goto attach
 if /i "%sel%"=="3" goto setup
 if /i "%sel%"=="Q" goto end
 goto menu
+
+:attach
+echo.
+echo [Attach TEST] A browser opens. In the page, do:
+echo    1) Temp-save  2) "back to edit"  3) open the "Attachments" tab
+echo Then press Enter here. It attaches ONLY document #2 and dumps a DOM diagnosis.
+"%PY%" "%~dp099_data\src\web_fill.py" --attach
+goto done
 
 :fill
 echo.

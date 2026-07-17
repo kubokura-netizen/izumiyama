@@ -22,8 +22,8 @@
     "項目7"
   ],
   "attach_tab": "添付書類",
-  "_about_attach_enabled": "★添付自動化のON/OFF。既定false=手動運用(保存後の編集ページで添付行が自動ブラウザ上に描画されないため)。レポートに手動アップロード対応表(スロット番号←ファイル)を出す。true=保存後フローで自動添付を試みる(file_chooser方式は実装済だが上記事情で不安定)。",
-  "attach_enabled": false,
+  "_about_attach_enabled": "★添付自動化のON/OFF（既定true）。サイト仕様上、添付は一時保存後のみ可能なため、--autoでは 入力→一時保存→保存データ編集に戻る→添付→再度一時保存 の順で実行する。貼り先は #btn_upload_fileupload<N>（N=書類番号）に直接セット。",
+  "attach_enabled": true,
   "_about_overflow": "★②文字数オーバー対策。Webは改行コードも文字数に含む(表記4000だが実質~3200で溢れる)。char_limit_default=上限, char_warn_default=注意閾値。overflow_mode: report=超過を報告のみ / truncate=末尾を…に短縮して上限内へ。個別に field へ char_limit / char_warn / overflow_mode を書けば上書き。",
   "char_limit_default": 4000,
   "char_warn_default": 3200,
@@ -1026,5 +1026,15 @@
     "___cell=出力様式xlsxのセルを最優先で参照（手直し反映）。無ければ source(ヒアリング)。docx例: 長文欄を出力Wordの見出しから拾う ___",
     "___例) {\"desc\":\"選定方法\",\"selector\":\"#correct_slct\",\"docx\":{\"file_contains\":\"様式第一の二\",\"heading\":\"細胞提供者の選定方法\",\"until\":\"細胞提供者の適格性\"}} ___",
     "___3種で変更: output_folder_contains→『3種筋腱靭帯系PRP』/ 再生医療名称source→再生医療②/ 分類→第三種/ 委員会構成→commission_type2/ 疾患名→筋腱靭帯 / 各cellは3種様式で1行ずれるため要調整 ___"
+  ],
+  "_about_attach_login": "★添付テスト(--attach)で開くログイン画面。添付欄は一時保存した下書きでしか出ないため、ここで受付番号/パスワードを手動入力して下書きを開く。",
+  "attach_login_url": "https://saiseiiryo.mhlw.go.jp/application/login/plan",
+  "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定できる。01(様式第一の二xlsx)→書類1『認定再生医療等委員会意見書』、4.5(患者様説明書)→書類5『再生医療等を受ける者に対する説明文書』。",
+  "attach_slot_map": {
+    "01": "1",
+    "4.5": "5"
+  },
+  "attach_skip_prefix": [
+    "~$"
   ]
 }
