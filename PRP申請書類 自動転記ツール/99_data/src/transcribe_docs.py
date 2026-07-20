@@ -428,6 +428,10 @@ def _fill_xlsx_tokens(ws, hearing, kits, TX, saisei, doc_items=None):
         if "認定再生医療等委員会" in name and "認定番号" in name:
             cname = hearing.lookup("認定再生医療等委員会の名称", "審査委員会", 1)
             return hearing.committee_field(cname, 2)
+        # セクション:ラベル 形式（連絡先の氏名/電話番号/メールアドレス等）
+        sv = TX.section_label_value(name, hearing)
+        if sv:
+            return sv
         # 汎用：ヒアリングlabel直接参照（採血場所/投与場所/保険名称/問い合わせ先/委員会名称/電話/メール等）
         v = hearing.lookup(n2, "", 1)
         return TX.clean(v) if v not in (None, "") else ""

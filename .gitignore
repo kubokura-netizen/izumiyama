@@ -1,6 +1,14 @@
 # ダッシュボード用の仮想環境（各PCで自動生成されるため管理しない）
 .venv_dashboard/
 
+# venv を固めたZIP。配布には使えない（中の pyvenv.cfg が作成したPCの絶対パスを
+# 指すため、他人のPCでは動かない）。配布は _runtime 方式を使うこと。
+.venv_dashboard.zip
+
+# 配布用の同梱ランタイム（98_dashboard/配布ランタイム作成.ps1 で生成・約50MB）。
+# 生成物なのでGitでは管理せず、配布時のみフォルダに含める。
+_runtime/
+
 # Python キャッシュ
 __pycache__/
 *.pyc

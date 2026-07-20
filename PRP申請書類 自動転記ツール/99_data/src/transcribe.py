@@ -437,6 +437,26 @@ _RIREKI_CELLS = {
 }
 
 
+_SECLABEL_RE = re.compile(r"^\s*([^:：{}]+?)\s*[:：]\s*([^:：{}]+?)\s*$")
+
+
+def section_label_value(name, hearing):
+    """{{セクション:ラベル}} 形式のトークンを解決する。
+       ヒアリングのA列（セクション）+B列（ラベル）で一意に引く。
+       例) {{再生医療/実施責任者の連絡先（通常院長又は責任者）:電話番号}}
+       「氏名」「電話番号」のようにラベルが複数セクションで重複する項目のための書式。
+       解決できない場合は None（呼び出し側の従来フォールバックに委ねる）。"""
+    m = _SECLABEL_RE.match(clean(name))
+    if not m:
+        return None
+    section, label = m.group(1), m.group(2)
+    # 医師の役職・氏名（:氏名1 等）は doctor_fill / _doctor_token_value 側の担当
+    if "再生医療を行う医師" in section:
+        return None
+    v = hearing.lookup(label, section, 1)
+    return clean(v) if v not in (None, "") else None
+
+
 def resolve_token_by_name(name, hearing, kits, saisei):
     """トークン名（{{...}} の中身）から実値を解決する汎用リゾルバ。
        前世代の広範なトークン（キット製造方法・略歴書・委員会・作業日 等）も取りこぼさない。
@@ -505,6 +525,10 @@ def resolve_token_by_name(name, hearing, kits, saisei):
     # 医師略歴書（その他はシート直接参照）
     if name in _RIREKI_CELLS:
         return clean(hearing.sheet_cell("略歴書（PRP）", _RIREKI_CELLS[name]))
+    # セクション:ラベル 形式（連絡先の氏名/電話番号/メールアドレス等）
+    sv = section_label_value(name, hearing)
+    if sv:
+        return sv
     # 実施責任者の氏名
     if "実施責任者" in name and "氏名" in name:
         return clean(hearing.lookup("氏名", "実施責任者", 1)) or ""
