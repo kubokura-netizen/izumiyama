@@ -632,6 +632,18 @@
       }
     },
     {
+      "_note": "委託の内容。委託の有無=無なので様式は『該当なし』。見出し『細胞培養加工施設』の+2行目(施設番号→施設名→該当なし)を参照(行ズレ耐性)。",
+      "desc": "委託の内容",
+      "selector": "#cellculture_cnt1",
+      "type": "text",
+      "row": {
+        "heading": "細胞培養加工施設",
+        "col": "L",
+        "offset": 2,
+        "span": 1
+      }
+    },
+    {
       "desc": "許可区分",
       "selector": "input[name='data[Plansub3][1][facility_type]']",
       "type": "radio",
@@ -1081,16 +1093,16 @@
   ],
   "_about_attach_login": "★添付テスト(--attach)で開くログイン画面。添付欄は一時保存した下書きでしか出ないため、ここで受付番号/パスワードを手動入力して下書きを開く。",
   "attach_login_url": "https://saiseiiryo.mhlw.go.jp/application/login/plan",
-  "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定でき、リストにすると同じファイルを複数欄へ貼る。01(様式第一の二xlsx)→書類1『認定再生医療等委員会意見書』(後日差し替え予定)。4.5(患者様説明書)→書類4『細胞提供者又は代諾者に対する説明文書及び同意文書の様式』と書類5『再生医療等を受ける者に対する説明文書及び同意文書の様式』の両方。",
+  "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定でき、リストにすると同じファイルを複数欄へ貼る。4.5(患者様説明書)→書類4と書類5の両方。書類1(認定再生医療等委員会意見書)は別途用意のため自動添付しない(01.様式xlsxはattach_skip_prefixで除外＝転記の元ファイルであり添付物ではない)。",
   "attach_slot_map": {
-    "01": "1",
     "4.5": [
       "4",
       "5"
     ]
   },
   "attach_skip_prefix": [
-    "~$"
+    "~$",
+    "01."
   ],
   "overflow_mark": "文字数超過"
 }

@@ -367,12 +367,15 @@ def _find_heading_row(ws, heading, occ=1, exact=False, head_cols=("B", "C", "D")
 
 
 def _read_by_heading(ws, heading, col="L", max_span=40, skip=0, occ=1,
-                     exact=False, offset=0, span=0, head_cols=("B", "C", "D")):
+                     exact=False, offset=0, span=0, head_cols=("B", "C", "D"),
+                     joiner="\n\n"):
     """★見出し文字列で行を探して値を読む（行番号のハードコードを避ける）。
        転記ツール(transcribe.py)の改修で出力Excelの行がズレても自動追従できる。
          skip/offset … 見出し行から読み飛ばす行数（見出し行が■/□マーカーの時は1）
          span        … 読む行数を固定（0=次の見出しが来るまで。医師の氏名/所属など1行だけ取る用）
          occ / exact … 重複見出しの選別
+         joiner      … 複数セルを連結する区切り。既定は空行 "\\n\\n"（＝セル境界を1行空けて
+                        本文中の改行と区別する）。1行詰めたい欄は row.joiner:"\\n" で上書き。
        戻り値: 連結テキスト（見出しが見つからなければ ""）。"""
     start = _find_heading_row(ws, heading, occ, exact, head_cols)
     if not start:
@@ -390,7 +393,7 @@ def _read_by_heading(ws, heading, col="L", max_span=40, skip=0, occ=1,
         v = TX.clean(ws["%s%d" % (col, r)].value)
         if v:
             parts.append(v)
-    return "\n".join(parts)
+    return joiner.join(parts)
 
 
 def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
@@ -443,7 +446,8 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
                              bool(rowspec.get("exact", False)),
                              int(rowspec.get("offset", 0)),
                              int(rowspec.get("span", 0)),
-                             hcols)
+                             hcols,
+                             rowspec.get("joiner", "\n\n"))   # 既定=空行でセル境界を区切る
         # 住所→都道府県/以降、郵便番号の整形（cell経路と同じ変換を row でも使えるように）
         tf = rowspec.get("tf")
         if tf in ("pref", "addr_body"):
