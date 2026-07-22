@@ -170,6 +170,10 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <div class="muted" style="margin-top:8px;font-size:11.5px">
         ※ その都度、今回使うファイルを全て入れてください。不要なファイルは各行の <b>✕</b> で削除できます。</div>
+      <div id="inputHead" style="display:none;align-items:center;justify-content:space-between;margin-top:12px">
+        <span class="muted" id="inputCount"></span>
+        <button class="btn ghost sm" id="clearAllBtn" style="color:var(--danger);border-color:var(--danger)">🗑 すべて削除</button>
+      </div>
       <ul class="files" id="inputList"></ul>
 
       <h2 style="margin-top:20px"><span class="n">2</span>転記を実行する</h2>
@@ -263,9 +267,15 @@ const KIND_TAG = {
 function renderInputs(list){
   inputs = list || [];
   const ul=$("#inputList"); ul.innerHTML="";
+  const head=$("#inputHead");
   if(!inputs.length){
     ul.innerHTML='<li style="cursor:default"><span class="muted">まだファイルがありません。上のエリアに入れてください。</span></li>';
+    if(head) head.style.display="none";
     updateRunState(); return;
+  }
+  if(head){
+    head.style.display="flex";
+    $("#inputCount").textContent=`現在 ${inputs.length} 件`;
   }
   inputs.forEach(f=>{
     const li=document.createElement("li"); li.style.cursor="default";
@@ -304,6 +314,17 @@ async function delInput(name){
     toast("削除しました: "+name); await refresh();
   }catch(_){ toast("削除に失敗しました"); }
 }
+async function delAllInputs(){
+  if(running){ toast("実行中は削除できません"); return; }
+  if(!inputs.length) return;
+  if(!confirm(`入力ファイル ${inputs.length} 件をすべて削除します。\n（生成済みの書類フォルダ・ログは残ります）\nよろしいですか？`)) return;
+  try{
+    const r=await fetch("/api/delete-all",{method:"POST"});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(j.error||"削除に失敗しました"); await refresh(); return; }
+    toast(`すべて削除しました（${(j.deleted||[]).length}件）`); await refresh();
+  }catch(_){ toast("削除に失敗しました"); }
+}
 
 function renderOutputs(list){
   const box=$("#outputs");
@@ -311,12 +332,30 @@ function renderOutputs(list){
   box.innerHTML="";
   list.forEach(o=>{
     const row=document.createElement("div"); row.className="row";
-    row.innerHTML=`<span>📁</span><span class="nm">${esc(o.name)}</span>
+    const types=(o.types||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(" ");
+    row.innerHTML=`<span>📁</span>
+      <span class="nm"><b>${esc(o.date||o.mtime)}</b> ${types}<br>
+        <span class="muted" style="font-size:11.5px">${esc(o.name)}</span></span>
       <span class="meta">${o.files}ファイル ・ ${o.mtime}</span>
-      <button class="btn sm">⬇ ZIP</button>`;
-    row.querySelector("button").onclick=()=>{ window.location="/api/download?folder="+encodeURIComponent(o.name); };
+      <button class="btn sm dlBtn">⬇ ZIP（一式）</button>
+      <button class="btn ghost sm delBtn" title="この日付の出力一式を削除"
+        style="color:var(--danger);border-color:var(--danger)">🗑 削除</button>`;
+    row.querySelector(".dlBtn").onclick=()=>{ window.location="/api/download?group="+encodeURIComponent(o.key); };
+    row.querySelector(".delBtn").onclick=()=>delOutput(o);
     box.appendChild(row);
   });
+}
+async function delOutput(o){
+  const label=(o.date||o.mtime)+" ／ "+o.name;
+  const kinds=(o.types||[]).join("・");
+  if(!confirm(label+"\nの出力一式"+(kinds?"（"+kinds+"）":"")+"を削除します。よろしいですか？")) return;
+  try{
+    const r=await fetch("/api/output/delete",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({group:o.key})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(j.error||"削除に失敗しました"); await refresh(); return; }
+    toast("削除しました（"+((j.deleted||[]).length)+"フォルダ）"); await refresh();
+  }catch(_){ toast("削除に失敗しました"); }
 }
 
 function renderHistory(list){
@@ -595,6 +634,7 @@ fileInput.onchange=()=>{ if(fileInput.files.length) uploadFiles(fileInput.files)
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
 drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); });
 $("#runBtn").onclick=run;
+$("#clearAllBtn").onclick=delAllInputs;
 
 refresh();          // /api/state と /api/web/status をビューに関係なく先読み
 routeFromHash();    // URLハッシュから初期ビューを復元（既定はホーム）

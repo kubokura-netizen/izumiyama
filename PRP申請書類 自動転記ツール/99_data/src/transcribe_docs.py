@@ -542,11 +542,15 @@ def _fill_all_docx_tokens(d, hearing, kits, saisei, TX, iter_paras):
             if v == "":
                 continue                       # 空は _clear_doc_tokens に任せる
             lines = v.split("\n")
+            # 元ラン（テンプレの{{…}}を保持していたラン）に明示サイズがあれば控えておく。
+            # add_run で作る新ランはサイズ無指定＝文書既定(10.5pt)に戻ってしまうため、
+            # 明示サイズを新ランへ引き継いで見た目を保つ（例: 日付トークンの12pt維持）。
+            src_sz = _run_sz_halfpts(p.runs[0]._element, default=None) if p.runs else None
             for r in list(p.runs):
                 r._element.getparent().remove(r._element)
-            run = p.add_run(lines[0]); _run_green(run)
+            run = p.add_run(lines[0]); _run_green(run); _apply_run_sz(run, src_sz)
             for ln in lines[1:]:
-                run.add_break(); run = p.add_run(ln); _run_green(run)
+                run.add_break(); run = p.add_run(ln); _run_green(run); _apply_run_sz(run, src_sz)
             n += 1
         else:
             resolved = {}
@@ -577,6 +581,17 @@ def _run_sz_halfpts(r_el, default=36):
             except ValueError:
                 pass
     return default
+
+
+def _apply_run_sz(run, half_pts):
+    """ハーフポイント値をランへ設定（w:sz と w:szCs の両方）。None/0 のときは何もしない。"""
+    if not half_pts:
+        return
+    try:
+        from docx.shared import Pt
+        run.font.size = Pt(half_pts / 2.0)
+    except Exception:
+        pass
 
 
 def _build_ruby_run(base, reading, sz, color):
@@ -960,15 +975,12 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                                                     {"sheet": exc.get("sheet"), "cell": ce["cell"],
                                                      "var": ce.get("desc", "cell_edit")},
                                                     val, TX.ST_CHECK, ce.get("desc")))
-                # 転記したセルを緑にマーク／元が緑だが未転記のセルはリストへ（黒のまま）
+                # 転記したセルを緑にマーク（未転記判定はトークン穴埋め後に行う）
                 for coord in written:
                     try:
                         _set_cell_color(ws[coord], GREEN)
                     except Exception:
                         pass
-                for coord, ov in orig_green.items():
-                    if coord not in written:
-                        green_report.append((doc_key, sheet, coord, ov))
                 # 部分セル・旧トークンの {{…}} をヒアリング値で穴埋め（clear_tokensの前に）
                 _saisei = 2 if "3種" in doc_key else 1
                 # {{4.5本文:N}} 用に説明書docx（4.5…）の項目本文を抽出（テンプレ側を参照＝最新内容）
@@ -977,6 +989,29 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
                 _doc_items = _docx_items(_exp[0]) if _exp else {}
                 _fill_xlsx_tokens(ws, hearing, kits, TX, _saisei, _doc_items)
                 TX.clear_tokens(wb)   # なお残る未充足 {{…}} を空欄化（例: 3種様式の{{医師2_氏名}}）
+                # 緑ターゲットの未転記判定は、トークン穴埋め・clear_tokens 後の「最終値」で行う。
+                #   旧実装は穴埋め前に判定していたため、トークン方式で転記済みのセルまで
+                #   「緑なのに未転記」に誤計上していた（＝本リストの精度低下の原因）。
+                #   最終値が空、または未充足トークンが残るものだけを真の未転記として報告する。
+                #   さらに、空の医師欄（delete_empty で行ごと削除される範囲）は意図的な空欄なので除外。
+                del_lo = del_hi = None
+                if doctor_del:
+                    del_lo, del_hi = doctor_del[0], doctor_del[0] + doctor_del[1] - 1
+                for coord, ov in orig_green.items():
+                    if coord in written:
+                        continue                     # entries/医師/チェックボックス等で転記済み
+                    if del_lo is not None:
+                        digits = "".join(ch for ch in coord if ch.isdigit())
+                        if digits and del_lo <= int(digits) <= del_hi:
+                            continue                 # 削除される空の医師欄行 → 報告しない
+                    final = ws[coord].value
+                    if final is None or str(final).strip() == "" or "{{" in str(final):
+                        green_report.append((doc_key, sheet, coord, ov))
+                    else:
+                        try:                         # トークン等で値が入った緑ターゲットも緑に戻す
+                            _set_cell_color(ws[coord], GREEN)
+                        except Exception:
+                            pass
                 # 変更セルの差分を算出し、XML手術で書込み（openpyxl保存を避け図形を保持）
                 diff = {}
                 for r in ws.iter_rows():

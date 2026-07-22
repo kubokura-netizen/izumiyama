@@ -18,6 +18,7 @@ import io
 import sys
 import glob
 import json
+import shutil
 import zipfile
 import datetime
 import threading
@@ -39,6 +40,7 @@ DATA = os.path.join(BASE, "99_data")
 TRANSCRIBE = os.path.join(DATA, "src", "transcribe.py")
 WEB_FILL = os.path.join(DATA, "src", "web_fill.py")
 WEB_MAPPING = os.path.join(DATA, "マッピング", "web_mapping.json")
+DOCS_CONFIG = os.path.join(DATA, "マッピング", "docs_config.json")
 
 
 def resolve_dir(prefix, create=False):
@@ -75,6 +77,60 @@ def safe_name(name):
     return name.replace("\\", "").replace("/", "").strip()
 
 
+def _long(path):
+    """Windowsの260文字パス上限を回避する拡張パス（\\\\?\\）へ変換。他OSはそのまま。
+       深い階層の長いPDF名で rmtree が失敗するのを防ぐ（transcribe_docs と同じ流儀）。"""
+    if os.name != "nt":
+        return path
+    ap = os.path.abspath(path)
+    if ap.startswith("\\\\?\\"):
+        return ap
+    if ap.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + ap[2:]
+    return "\\\\?\\" + ap
+
+
+def _safe_listdir(d):
+    try:
+        return os.listdir(d)
+    except OSError:
+        return []
+
+
+def _doc_prefixes():
+    """docs_config.json の各書類フォルダ名（2種関節系PRP / 3種筋腱靭帯系PRP / SOP）を出現順で返す。
+       出力フォルダ名 '<書類種別>_<ヒアリングシート名>' を分解する接頭辞に使う。"""
+    try:
+        cfg = json.load(io.open(DOCS_CONFIG, encoding="utf-8"))
+        names = [d.get("folder", "") for d in cfg.get("documents", {}).values() if d.get("folder")]
+        if names:
+            return names
+    except Exception:
+        pass
+    return ["2種関節系PRP", "3種筋腱靭帯系PRP", "SOP"]
+
+
+def _split_output_name(name, prefixes):
+    """出力フォルダ名を (書類種別, ヒアリングシート名) に分解。該当接頭辞が無ければ (None, name)。"""
+    for p in prefixes:
+        if name.startswith(p + "_"):
+            return p, name[len(p) + 1:]
+    return None, name
+
+
+def _short_type(kind):
+    """表示用に書類種別を短縮（2種関節系PRP→2種 / SOP→SOP）。"""
+    if not kind:
+        return "その他"
+    import re
+    m = re.match(r"^(\d+種)", kind)
+    if m:
+        return m.group(1)
+    if "SOP" in kind:
+        return "SOP"
+    return kind
+
+
 def input_kind(name):
     """ファイル名から種別を判定（ヒアリングシート/略歴書/その他）。transcribe.py の選別と同じ流儀。"""
     b = os.path.basename(name or "")
@@ -108,29 +164,42 @@ def detect_hearing():
 
 
 def list_outputs():
-    """02_output 直下のフォルダを新しい順に。"""
-    items = []
-    try:
-        entries = os.listdir(DIR_OUTPUT)
-    except OSError:
-        entries = []
-    for name in entries:
+    """02_output 直下のフォルダを『ヒアリングシート単位（＝1回の実行）』でまとめて新しい順に返す。
+       2種/3種/SOP は同じヒアリングシート名を末尾に共有するため、1グループに束ねて日付単位で扱う。"""
+    prefixes = _doc_prefixes()
+    groups = {}
+    for name in _safe_listdir(DIR_OUTPUT):
         full = os.path.join(DIR_OUTPUT, name)
         if not os.path.isdir(full):
             continue
+        kind, base = _split_output_name(name, prefixes)
         nfiles = 0
         for _root, _dirs, fs in os.walk(full):
             nfiles += len([x for x in fs if not x.startswith("~$")])
-        items.append({
-            "name": name,
-            "mtime_ts": os.path.getmtime(full),
-            "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(full)).strftime("%Y-%m-%d %H:%M"),
-            "files": nfiles,
-        })
+        ts = os.path.getmtime(full)
+        g = groups.get(base)
+        if g is None:
+            g = groups[base] = {"key": base, "types": [], "files": 0, "mtime_ts": ts}
+        if kind and kind not in g["types"]:
+            g["types"].append(kind)
+        g["files"] += nfiles
+        g["mtime_ts"] = max(g["mtime_ts"], ts)
+
+    items = list(groups.values())
     items.sort(key=lambda x: x["mtime_ts"], reverse=True)
-    for it in items:
-        del it["mtime_ts"]
-    return items
+    result = []
+    for g in items:
+        types = sorted(g["types"], key=lambda t: prefixes.index(t) if t in prefixes else 99)
+        dt = datetime.datetime.fromtimestamp(g["mtime_ts"])
+        result.append({
+            "key": g["key"],
+            "name": g["key"],
+            "types": [_short_type(t) for t in types],
+            "files": g["files"],
+            "date": dt.strftime("%Y-%m-%d"),
+            "mtime": dt.strftime("%Y-%m-%d %H:%M"),
+        })
+    return result
 
 
 def list_logs():
@@ -140,6 +209,24 @@ def list_logs():
         "name": os.path.basename(f),
         "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M"),
     } for f in files]
+
+
+def cleanup_old_logs(days=30):
+    """DIR_LOGS の 転記ログ_*.xlsx のうち、更新日時が days 日より古いものを削除（起動時掃除）。
+       返り値: 削除件数。エラーは握りつぶして起動を止めない。"""
+    removed = 0
+    try:
+        cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
+        for f in glob.glob(os.path.join(DIR_LOGS, "転記ログ_*.xlsx")):
+            try:
+                if datetime.datetime.fromtimestamp(os.path.getmtime(f)) < cutoff:
+                    os.remove(f)
+                    removed += 1
+            except OSError:
+                pass
+    except Exception:
+        pass
+    return removed
 
 
 def parse_log(log_path):
@@ -239,6 +326,24 @@ def api_delete():
     return jsonify({"ok": True, "name": name})
 
 
+@app.post("/api/delete-all")
+def api_delete_all():
+    """01_input の入力ファイル(.xlsx)を一括削除（次の案件に切り替える前の一掃用）。"""
+    files = [f for f in glob.glob(os.path.join(DIR_INPUT, "*.xlsx"))
+             if not os.path.basename(f).startswith("~$")]
+    deleted, failed = [], []
+    for path in files:
+        try:
+            os.remove(path)
+            deleted.append(os.path.basename(path))
+        except Exception as e:
+            failed.append({"name": os.path.basename(path), "error": "%r" % e})
+    if failed:
+        return jsonify({"error": "一部の削除に失敗しました",
+                        "deleted": deleted, "failed": failed}), 500
+    return jsonify({"ok": True, "deleted": deleted})
+
+
 @app.get("/api/run")
 def api_run():
     """ヒアリングシートで transcribe.py を実行し、進捗をSSEで流す。
@@ -325,25 +430,77 @@ def api_download_log():
     return send_file(path, as_attachment=True, download_name=name)
 
 
+def _output_members(group):
+    """指定グループ（ヒアリングシート名）に属する 02_output 直下フォルダ名の一覧。"""
+    prefixes = _doc_prefixes()
+    members = []
+    for name in _safe_listdir(DIR_OUTPUT):
+        if not os.path.isdir(os.path.join(DIR_OUTPUT, name)):
+            continue
+        _kind, base = _split_output_name(name, prefixes)
+        if base == group:
+            members.append(name)
+    return members
+
+
 @app.get("/api/download")
 def api_download():
-    """02_output 配下のフォルダをZIPにして返す。"""
+    """02_output のうち、指定グループ（日付＝ヒアリングシート単位）の 2種/3種/SOP を1つのZIPにまとめて返す。
+       group: グループキー。後方互換で folder（単一フォルダ名）も可。"""
+    group = request.args.get("group", "")
     folder = safe_name(request.args.get("folder", ""))
-    full = os.path.join(DIR_OUTPUT, folder)
-    if not folder or not os.path.isdir(full):
+    if group:
+        targets = _output_members(group)
+        zip_base = group
+    elif folder and os.path.isdir(os.path.join(DIR_OUTPUT, folder)):
+        targets = [folder]
+        zip_base = folder
+    else:
+        targets = []
+        zip_base = ""
+    if not targets:
         return jsonify({"error": "フォルダが見つかりません"}), 404
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _dirs, files in os.walk(full):
-            for fn in files:
-                if fn.startswith("~$"):
-                    continue
-                fp = os.path.join(root, fn)
-                arc = os.path.join(folder, os.path.relpath(fp, full))
-                zf.write(fp, arc)
+        for folder_name in targets:
+            # 拡張パス（\\?\）で走査・読み取りする。深い階層の長いPDF名で 260 文字上限を
+            # 超えると os.stat が WinError 3 で失敗するため（論文PDF等で発生）。
+            walk_root = _long(os.path.join(DIR_OUTPUT, folder_name))
+            for root, _dirs, files in os.walk(walk_root):
+                for fn in files:
+                    if fn.startswith("~$"):
+                        continue
+                    fp = os.path.join(root, fn)
+                    arc = os.path.join(folder_name, os.path.relpath(fp, walk_root))
+                    zf.write(fp, arc)
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name="%s.zip" % folder,
-                     mimetype="application/zip")
+    dl = (safe_name(zip_base) or "output") + ".zip"
+    return send_file(buf, as_attachment=True, download_name=dl, mimetype="application/zip")
+
+
+@app.post("/api/output/delete")
+def api_output_delete():
+    """02_output の1グループ（日付＝ヒアリングシート単位／2種・3種・SOP一式）を削除。"""
+    data = request.get_json(silent=True) or {}
+    group = data.get("group", "") or request.form.get("group", "")
+    if not group:
+        return jsonify({"error": "対象がありません"}), 400
+    targets = _output_members(group)
+    if not targets:
+        return jsonify({"error": "フォルダが見つかりません"}), 404
+    deleted, failed = [], []
+    for name in targets:
+        full = os.path.join(DIR_OUTPUT, name)
+        try:
+            shutil.rmtree(_long(full))
+            deleted.append(name)
+        except Exception as e:
+            failed.append({"name": name, "error": "%r" % e})
+    if failed:
+        return jsonify({"error": "一部の削除に失敗しました",
+                        "deleted": deleted, "failed": failed}), 500
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 # ---------------------------------------------------------------------------
@@ -575,6 +732,11 @@ if __name__ == "__main__":
     print(" ブラウザで開く: %s" % url)
     print(" 終了するには、この画面で Ctrl + C")
     print("=" * 60)
+
+    # 起動時のログ掃除：30日より古い転記ログを自動削除
+    _removed = cleanup_old_logs(30)
+    if _removed:
+        print(" ※ 30日より古いログ %d 件を自動削除しました。" % _removed)
 
     # 起動直後にブラウザを開く（reloader無効時のみ）
     if not os.environ.get("WERKZEUG_RUN_MAIN"):
