@@ -83,15 +83,21 @@ INDEX_HTML = r"""<!doctype html>
   .btn.sm{padding:6px 11px;font-size:12px}
   .run-row{display:flex;align-items:center;gap:12px;margin-top:14px}
   /* log console */
-  #console,#webConsole{margin-top:14px;background:#0d1420;color:#cdd8ea;border-radius:10px;padding:12px 14px;
+  #console,#webConsole,#setupConsole{margin-top:14px;background:#0d1420;color:#cdd8ea;border-radius:10px;padding:12px 14px;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.55;
     max-height:260px;overflow:auto;white-space:pre-wrap;display:none}
-  #console .l,#webConsole .l{opacity:.92}
-  #console .warn,#webConsole .warn{color:#ffd479}
-  #console .err,#webConsole .err{color:#ff9a9a}
-  #console .ok,#webConsole .ok{color:#8ee6a8}
+  #console .l,#webConsole .l,#setupConsole .l{opacity:.92}
+  #console .warn,#webConsole .warn,#setupConsole .warn{color:#ffd479}
+  #console .err,#webConsole .err,#setupConsole .err{color:#ff9a9a}
+  #console .ok,#webConsole .ok,#setupConsole .ok{color:#8ee6a8}
   /* notice box */
   .notice{border:1px solid var(--warn);background:var(--warnbg);border-radius:11px;padding:14px 16px;margin-bottom:14px}
+  .setup-ok{border:1px solid var(--ok,#2e9e5b);background:rgba(46,158,91,.08);border-radius:11px;
+    padding:12px 16px;margin-top:18px;display:flex;align-items:center;gap:10px;justify-content:center}
+  .setup-ok .t{font-weight:700;color:var(--ok,#2e9e5b)}
+  .pill{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:999px;margin:2px 4px 2px 0}
+  .pill.ng{background:var(--warnbg);border:1px solid var(--warn);color:#8a6d00}
+  .pill.ok{background:rgba(46,158,91,.12);border:1px solid #2e9e5b;color:#2e9e5b}
   code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:5px;font-size:.92em}
   /* stat cards */
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
@@ -153,6 +159,24 @@ INDEX_HTML = r"""<!doctype html>
         <span class="go">開く →</span>
       </button>
     </div>
+    <!-- 初回起動準備（このPCで初めて使うとき） -->
+    <div id="setupCard" class="notice" style="display:none;margin-top:18px">
+      <div style="font-weight:700;margin-bottom:6px">⚙ 初回起動準備（このPCで初めて使うとき）</div>
+      <div class="muted" style="margin-bottom:8px">
+        両ツールに必要な部品を導入します（数分・ネット接続が必要）。
+        書類転記に必要な部品、Web転記のブラウザ（Playwright＋Chromium）、添付の白黒PDF化部品（pywin32・PyMuPDF）をまとめて入れます。</div>
+      <div id="setupPills" style="margin-bottom:10px"></div>
+      <button class="btn" id="setupBtn">🧰 準備を実行（初回のみ）</button>
+      <div class="muted" style="margin-top:8px;font-size:11.5px">
+        ※ 添付書類の白黒PDF化には <b>MS Office（Word/Excel）</b> がこのPCに必要です（部品導入とは別）。</div>
+      <div id="setupConsole"></div>
+    </div>
+    <div id="setupOk" class="setup-ok" style="display:none">
+      <span style="font-size:18px">✔</span>
+      <span class="t">初回起動準備：完了（このPCですぐ使えます）</span>
+      <button class="btn ghost sm" id="setupRedo" style="margin-left:8px">再実行</button>
+    </div>
+
     <p class="muted" style="text-align:center;margin-top:20px">使う機能を選んでください。今後ここに機能が追加されます。</p>
   </section>
 
@@ -218,7 +242,7 @@ INDEX_HTML = r"""<!doctype html>
     <!-- Playwright 未導入のときの案内 -->
     <div id="webSetup" class="notice" style="display:none">
       <div style="font-weight:700;margin-bottom:6px">⚙ 初回だけ準備が必要です</div>
-      <div class="muted" style="margin-bottom:10px">WEB転記にはブラウザ自動化部品（Playwright＋Chromium）が必要です。下のボタンで導入できます（数分・ネット接続が必要）。</div>
+      <div class="muted" id="webSetupMsg" style="margin-bottom:10px">WEB転記にはブラウザ自動化部品（Playwright＋Chromium）と、添付の白黒PDF化部品（pywin32・PyMuPDF）が必要です。下のボタンで導入できます（数分・ネット接続が必要）。</div>
       <button class="btn" id="webSetupBtn">🧰 準備を実行（初回のみ）</button>
     </div>
 
@@ -485,6 +509,7 @@ async function refresh(){
   renderOutputs(s.outputs);
   renderHistory(s.logs);
   webRefreshStatus();
+  homeRefreshSetup();
 }
 
 // ---- WEB転記 ----
@@ -514,8 +539,14 @@ function webSetControls(){
 async function webRefreshStatus(){
   try{
     const s=await (await fetch("/api/web/status")).json();
-    // 準備案内
-    $("#webSetup").style.display = s.playwright ? "none" : "block";
+    // 準備案内：ブラウザ部品 or 添付PDF化部品が未導入なら表示
+    const needSetup = !(s.playwright && s.pdf);
+    $("#webSetup").style.display = needSetup ? "block" : "none";
+    if(needSetup){
+      const miss=[]; if(!s.playwright) miss.push("ブラウザ自動化（Playwright＋Chromium）");
+      if(!s.pdf) miss.push("添付の白黒PDF化（pywin32・PyMuPDF）");
+      $("#webSetupMsg").textContent = "未導入: "+miss.join(" ／ ")+"。下のボタンで導入できます（数分・ネット接続が必要）。";
+    }
     // 参照元フォルダのヒント
     let hint="";
     if(!s.output_folder){
@@ -577,19 +608,38 @@ async function webStopHard(){
   // done イベントで後片付けされるが、来ない場合に備えてUIも戻す
   setTimeout(()=>{ if(webRunning) webFinish(); }, 3500);
 }
-function webSetup(){
-  $("#webConsole").innerHTML=""; $("#webConsole").style.display="block";
-  $("#webSetupBtn").disabled=true;
+// 共通の「初回起動準備」実行（コンソール要素・ボタン群・完了後処理を指定）
+function runSetup(consoleSel, btns, doneCb){
+  const c=$(consoleSel); c.innerHTML=""; c.style.display="block";
+  const log=(t,cls)=>{ const d=document.createElement("div"); d.className="l "+(cls||"");
+    d.textContent=t; c.appendChild(d); c.scrollTop=c.scrollHeight; };
+  btns.forEach(b=>{ const el=$(b); if(el) el.disabled=true; });
   const es=new EventSource("/api/web/setup");
-  es.addEventListener("log", e=>{ const line=JSON.parse(e.data).line; webLog(line, webLineClass(line)); });
+  es.addEventListener("log", e=>{ const line=JSON.parse(e.data).line; log(line, webLineClass(line)); });
   es.addEventListener("error", e=>{
-    try{ webLog("✖ "+JSON.parse(e.data).message,"err"); }catch(_){}
-    es.close(); $("#webSetupBtn").disabled=false;
+    try{ log("✖ "+JSON.parse(e.data).message,"err"); }catch(_){}
+    es.close(); btns.forEach(b=>{ const el=$(b); if(el) el.disabled=false; });
   });
   es.addEventListener("done", ()=>{
-    webLog("✔ 準備が完了しました。「ブラウザを開いて開始」を押せます。","ok");
-    es.close(); $("#webSetupBtn").disabled=false; webRefreshStatus(); toast("準備が完了しました");
+    log("✔ 準備が完了しました。","ok");
+    es.close(); btns.forEach(b=>{ const el=$(b); if(el) el.disabled=false; });
+    webRefreshStatus(); homeRefreshSetup(); toast("準備が完了しました");
+    if(doneCb) doneCb();
   });
+}
+function webSetup(){ runSetup("#webConsole", ["#webSetupBtn"]); }
+
+// ホームの初回起動準備：状態を取得して「未導入なら案内カード／導入済みなら✔」を出す
+async function homeRefreshSetup(){
+  try{
+    const s=await (await fetch("/api/setup/status")).json();
+    const ready = !!s.all_ready;
+    $("#setupCard").style.display = ready ? "none" : "block";
+    $("#setupOk").style.display   = ready ? "flex" : "none";
+    const P=[["書類転記",s.base],["Web転記(ブラウザ)",s.playwright],["添付PDF化",s.pdf]];
+    $("#setupPills").innerHTML = P.map(([name,ok])=>
+      '<span class="pill '+(ok?"ok":"ng")+'">'+(ok?"✔ ":"— 未導入 ")+esc(name)+'</span>').join("");
+  }catch(_){/* サーバ未起動時などは何もしない */}
 }
 
 $("#webAuto").onclick =()=>webStartSession("auto");
@@ -598,6 +648,9 @@ $("#webQuit").onclick =()=>webSend("quit");
 $("#webStop").onclick =webStopHard;
 $("#webDump").onclick =()=>webStartSession("dump");
 $("#webSetupBtn").onclick=webSetup;
+$("#setupBtn").onclick =()=>runSetup("#setupConsole", ["#setupBtn","#setupRedo"]);
+$("#setupRedo").onclick=()=>{ $("#setupCard").style.display="block"; $("#setupOk").style.display="none";
+  runSetup("#setupConsole", ["#setupBtn","#setupRedo"]); };
 
 // ---- ページ（ビュー）ルーター ----
 // 機能を増やすときは VIEWS に1行、HTMLに <section id="view-XXX"> を1つ、ホームに tool-card を1枚足すだけ。
@@ -613,6 +666,7 @@ function showView(name){
   $("#hdTitle").textContent=m.title;
   $("#hdSub").textContent=m.sub;
   $("#backBtn").hidden=!m.back;
+  if(name==="home") homeRefreshSetup();
   const want="#/"+name;
   if(location.hash!==want) location.hash=want;   // ハッシュ同期（戻る/進む・リロード対応）
   window.scrollTo({top:0});

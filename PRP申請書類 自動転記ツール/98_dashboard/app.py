@@ -522,13 +522,33 @@ def _web_mapping():
         return {}
 
 
-def _playwright_ready():
-    """web_fill.py と同じ Python で playwright パッケージが入っているか。"""
+def _has_module(name):
     try:
         import importlib.util
-        return importlib.util.find_spec("playwright") is not None
+        return importlib.util.find_spec(name) is not None
     except Exception:
         return False
+
+
+def _playwright_ready():
+    """web_fill.py と同じ Python で playwright パッケージが入っているか。"""
+    return _has_module("playwright")
+
+
+def _pdf_ready():
+    """添付書類の白黒PDF化に必要な部品(pywin32・PyMuPDF)が入っているか。"""
+    return _has_module("win32com") and _has_module("fitz")
+
+
+def _setup_status():
+    """初回起動準備の状態。両ツールに必要な部品が揃っているかを返す。"""
+    base = _has_module("openpyxl") and _has_module("docx")   # 書類転記ツール①
+    pw = _playwright_ready()                                  # Web転記ツール②
+    pdf = _pdf_ready()                                        # 添付PDF化②
+    return {
+        "base": base, "playwright": pw, "pdf": pdf,
+        "all_ready": bool(base and pw and pdf),
+    }
 
 
 def _web_output_folder():
@@ -555,11 +575,18 @@ def api_web_status():
     m = _web_mapping()
     return jsonify({
         "playwright": _playwright_ready(),
+        "pdf": _pdf_ready(),
         "url": m.get("url", ""),
         "output_folder": _web_output_folder(),
         "running": running,
         "mode": WEB["mode"] if running else "",
     })
+
+
+@app.get("/api/setup/status")
+def api_setup_status():
+    """初回起動準備の状態（ホーム画面用）。両ツールの部品が揃っているか。"""
+    return jsonify(_setup_status())
 
 
 def _sse(event, data):
@@ -678,14 +705,22 @@ def api_web_stop():
 
 @app.get("/api/web/setup")
 def api_web_setup():
-    """初回準備：playwright（pip）と Chromium ブラウザを導入。進捗をSSEで流す。"""
+    """初回起動準備：両ツールに必要な部品を一括導入。進捗をSSEで流す。
+       ①書類転記(openpyxl/python-docx) ②Web転記(Playwright+Chromium) ③添付PDF化(pywin32/PyMuPDF)。"""
     @stream_with_context
     def generate():
+        req = os.path.join(DASH_DIR, "requirements.txt")
+        base_cmd = ([sys.executable, "-m", "pip", "install", "-r", req]
+                    if os.path.exists(req)
+                    else [sys.executable, "-m", "pip", "install",
+                          "flask", "openpyxl", "python-docx"])
         steps = [
-            ("Playwright を導入しています…", [sys.executable, "-m", "pip", "install", "playwright"]),
+            ("書類転記ツールの部品（Flask・openpyxl・python-docx）を導入しています…", base_cmd),
+            ("Web転記の部品（Playwright）を導入しています…",
+             [sys.executable, "-m", "pip", "install", "playwright"]),
             ("Chromium ブラウザを導入しています（数分かかることがあります）…",
              [sys.executable, "-m", "playwright", "install", "chromium"]),
-            ("PDF変換部品（pywin32・PyMuPDF）を導入しています…",
+            ("添付PDF化の部品（pywin32・PyMuPDF）を導入しています…",
              [sys.executable, "-m", "pip", "install", "pywin32", "PyMuPDF"]),
         ]
         for title, cmd in steps:
@@ -708,7 +743,7 @@ def api_web_setup():
             if proc.wait() != 0:
                 yield _sse("error", {"message": "導入に失敗しました。ネットワーク環境をご確認ください。"})
                 return
-        yield _sse("done", {"playwright": _playwright_ready()})
+        yield _sse("done", _setup_status())
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
