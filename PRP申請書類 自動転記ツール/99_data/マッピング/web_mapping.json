@@ -28,7 +28,7 @@
   "char_limit_default": 4000,
   "char_warn_default": 3200,
   "overflow_mode": "mark",
-  "_about_attachments": "★④添付書類。実フォームは『ファイル選択』ボタン→OSダイアログ→『アップロード』ボタン方式。ツールは添付書類タブを開き、各行の見出し先頭番号(1,2,3,4.5,6,7,8,9,14…)と、出力フォルダのファイル先頭番号を突き合わせて自動添付する(file_chooser方式)。設定不要(実行時に自動発見)。attach_tab=添付書類タブ名。",
+  "_about_attachments": "★添付スロット対応(#btn_upload_fileupload<N>)。slot=書類番号(その他=17)。match=出力ファイル名の部分一致(文字列/リスト)。from=case(案件フォルダ,既定)/SOP。複数一致・複数matchはその欄に全て添付。載せない書類(1/13/15)は記載しない。ファイルは白黒PDF化して添付する。",
   "fields": [
     {
       "desc": "提出日 年",
@@ -1092,17 +1092,74 @@
     "___3種で変更: output_folder_contains→『3種筋腱靭帯系PRP』/ 再生医療名称source→再生医療②/ 分類→第三種/ 委員会構成→commission_type2/ 疾患名→筋腱靭帯 / 各cellは3種様式で1行ずれるため要調整 ___"
   ],
   "_about_attach_login": "★添付テスト(--attach)で開くログイン画面。添付欄は一時保存した下書きでしか出ないため、ここで受付番号/パスワードを手動入力して下書きを開く。",
-  "attach_login_url": "https://saiseiiryo.mhlw.go.jp/application/login/plan",
   "_about_attach_slot": "★添付スロット対応。出力ファイルの先頭番号→Web添付欄(#btn_upload_fileupload<N>)。ここで上書き指定でき、リストにすると同じファイルを複数欄へ貼る。4.5(患者様説明書)→書類4と書類5の両方。書類1(認定再生医療等委員会意見書)は別途用意のため自動添付しない(01.様式xlsxはattach_skip_prefixで除外＝転記の元ファイルであり添付物ではない)。",
-  "attach_slot_map": {
-    "4.5": [
-      "4",
-      "5"
-    ]
-  },
-  "attach_skip_prefix": [
-    "~$",
-    "01."
-  ],
-  "overflow_mark": "文字数超過"
+  "overflow_mark": "文字数超過",
+  "_about_pdf": "★添付は白黒PDF化して貼る。Word/ExcelをOffice(COM)でPDF化→Ghostscriptがあればベクター白黒/無ければPyMuPDFで画像白黒。PDF変換フォルダにキャッシュ(元より新しければ再変換しない)。pdf_grayscale=false でカラーのまま。sop_folder_containsはSOP書類の取得元フォルダ接頭辞。",
+  "pdf_dir_name": "PDF変換",
+  "pdf_grayscale": true,
+  "sop_folder_contains": "SOP",
+  "attach_login_url": "https://saiseiiryo.mhlw.go.jp/application/login/plan",
+  "attachments": [
+    {
+      "slot": "2",
+      "match": "2 提供する再生医療等の詳細"
+    },
+    {
+      "slot": "3",
+      "match": "医師略歴書"
+    },
+    {
+      "slot": "4",
+      "match": [
+        "アセント文書",
+        "4.5 再生医療等を受けられる患者様"
+      ]
+    },
+    {
+      "slot": "5",
+      "match": [
+        "アセント文書",
+        "4.5 再生医療等を受けられる患者様"
+      ]
+    },
+    {
+      "slot": "6",
+      "match": "6 再生医療等提供計画に記載された"
+    },
+    {
+      "slot": "7",
+      "match": "7 研究を記載した書類"
+    },
+    {
+      "slot": "8",
+      "match": "8 特定細胞加工物概要書"
+    },
+    {
+      "slot": "9",
+      "match": "9 特定細胞加工物標準書"
+    },
+    {
+      "slot": "10",
+      "match": "衛生管理基準書",
+      "from": "SOP"
+    },
+    {
+      "slot": "11",
+      "match": "製造管理基準書",
+      "from": "SOP"
+    },
+    {
+      "slot": "12",
+      "match": "品質管理基準書",
+      "from": "SOP"
+    },
+    {
+      "slot": "14",
+      "match": "14 再生医療等の内容をできる限り平易"
+    },
+    {
+      "slot": "17",
+      "match": "情報の公表に関する同意書"
+    }
+  ]
 }

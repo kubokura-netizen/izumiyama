@@ -1223,52 +1223,79 @@ ATTACH_DIAG_JS = r"""
 """
 
 
-def _attach_slots(num, mapping=None):
-    """★出力ファイルの先頭番号 → 添付スロット番号の【リスト】。
-       実DOMより #btn_upload_fileupload<N> の N が書類番号（1..15、17=その他）。
-       attach_slot_map で明示できる。同じファイルを複数欄へ貼る場合はリストで指定する：
-         "4.5": ["4", "5"]  … 患者様説明書を 書類4 と 書類5 の両方へ
-         "01" : "1"          … 単一指定も可
-       指定が無ければ整数部をそのまま使う（例 "6" → 書類6）。"""
-    n = str(num).strip()
-    smap = (mapping or {}).get("attach_slot_map") or {}
-    if n in smap:
-        v = smap[n]
-        return [str(x) for x in (v if isinstance(v, (list, tuple)) else [v])]
-    if "." in n:
-        n = n.split(".")[0]
-    return [n]
+_ATTACH_EXTS = (".docx", ".doc", ".docm", ".xlsx", ".xls", ".xlsm", ".pdf")
 
 
-def _attach_slot(num, mapping=None):
-    """互換用：先頭のスロット番号だけ返す。"""
-    return _attach_slots(num, mapping)[0]
+def _pdf_dir(out_folder, mapping):
+    return os.path.join(out_folder, mapping.get("pdf_dir_name", "PDF変換"))
 
 
-def _attach_input_sel(num, mapping=None):
-    """添付スロット番号 → ファイル入力欄のセレクタ。"""
-    return "#btn_upload_fileupload%s" % _attach_slot(num, mapping)
+def _related_folder(out_folder, mapping, want_prefix):
+    """案件フォルダ(例 2種関節系PRP_<ヒアリング名>)と同じ<ヒアリング名>を持つ別フォルダ
+       (例 SOP_<ヒアリング名>)を返す。無ければ want_prefix で始まる最新フォルダ。"""
+    parent = os.path.dirname(out_folder)
+    base = os.path.basename(out_folder)
+    case_pref = mapping.get("output_folder_contains", "")
+    suffix = base[len(case_pref) + 1:] if (case_pref and base.startswith(case_pref + "_")) else ""
+    if suffix:
+        cand = os.path.join(parent, "%s_%s" % (want_prefix, suffix))
+        if os.path.isdir(cand):
+            return cand
+    cands = [d for d in glob.glob(os.path.join(parent, want_prefix + "*")) if os.path.isdir(d)]
+    return max(cands, key=os.path.getmtime) if cands else ""
 
 
-def _attach_targets(out_folder, mapping, only=""):
-    """出力フォルダ → { スロット番号: [ファイル…] }。
-       ・対象拡張子は docx/xlsx/pdf（略歴書は xlsx のことがある）
-       ・同じスロットに複数入る場合（医師人数分の略歴書等）はまとめる（input は multiple）"""
-    files = []
-    for pat in mapping.get("attach_exts", ["*.docx", "*.xlsx", "*.pdf"]):
-        files += glob.glob(os.path.join(out_folder, pat))
-    skips = tuple(mapping.get("attach_skip_prefix", ["~$"]))
-    groups = {}
-    for f in sorted(files):
+def _find_source_files(folder, patterns):
+    """folder 内で patterns(文字列/リスト)のいずれかを名前に含む対象ファイル一覧（~$除外）。"""
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    out = []
+    for f in sorted(glob.glob(os.path.join(folder, "*"))):
         b = os.path.basename(f)
-        if b.startswith(skips):
+        if b.startswith("~$"):
             continue
-        n = _lead_num(b)
-        if not n or (only and n != only):
+        if os.path.splitext(b)[1].lower() not in _ATTACH_EXTS:
             continue
-        for slot in _attach_slots(n, mapping):        # 同じファイルを複数スロットへ貼れる
-            groups.setdefault(slot, []).append(f)
-    return groups
+        if any(p and p in b for p in patterns):
+            out.append(f)
+    return out
+
+
+def _ensure_pdf(src, pdf_dir, gray=True):
+    """src(Word/Excel) → pdf_dir/<name>.pdf（白黒）。PDFは元より新しければ再変換しない(キャッシュ)。
+       src が既にPDFならそのまま使う。戻り値: (pdfパス, 方式 or 'cached'/'error', エラー文)。"""
+    if src.lower().endswith(".pdf"):
+        return src, "pdf(そのまま)", ""
+    os.makedirs(pdf_dir, exist_ok=True)
+    dst = os.path.join(pdf_dir, os.path.splitext(os.path.basename(src))[0] + ".pdf")
+    try:
+        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+            return dst, "cached", ""
+    except OSError:
+        pass
+    try:
+        import to_pdf as T                              # 遅延import（未導入でも他機能を止めない）
+        _, method = T.convert(src, dst, gray=gray)
+        return dst, method, ""
+    except Exception as e:
+        return "", "error", repr(e)
+
+
+def _resolve_attachments(mapping, out_folder, only=""):
+    """attachments 設定 → [(slot, [ソースファイル…]), …]。from=SOP は別フォルダから拾う。
+       only(スロット番号)指定でそのスロットのみ。"""
+    sop = _related_folder(out_folder, mapping, mapping.get("sop_folder_contains", "SOP"))
+    result = []
+    for a in mapping.get("attachments", []):
+        if not isinstance(a, dict):
+            continue
+        slot = str(a.get("slot", "")).strip()
+        if not slot or (only and slot != only):
+            continue
+        folder = sop if a.get("from") == "SOP" else out_folder
+        srcs = _find_source_files(folder, a.get("match", "")) if folder else []
+        result.append((slot, srcs, a.get("from", "case")))
+    return result
 
 
 def _upload_one(page, sel, paths):
@@ -1314,10 +1341,94 @@ def _latest_receipt():
     return "", "", ""
 
 
+def _prepare_slot_pdfs(mapping, out_folder, only="", R=None):
+    """attachments 設定を解決し、各ソースを白黒PDF化して { slot: [pdf…] } を返す。
+       R が渡されればレポート行を追記。PDF化はキャッシュ利用（元より新しければ再変換しない）。"""
+    if R is None:
+        R = []
+    try:
+        import to_pdf as T
+        ready, msg = T.check_ready()
+    except Exception as e:
+        ready, msg = False, "to_pdf 読込失敗: %r" % e
+    if not ready:
+        R.append("  ★ %s" % msg)
+        print("  ★ %s" % msg)
+        return {}
+    gray = mapping.get("pdf_grayscale", True)
+    pdf_dir = _pdf_dir(out_folder, mapping)
+    R.append("  PDF変換先: %s（白黒=%s）" % (pdf_dir, "はい" if gray else "いいえ"))
+    resolved = _resolve_attachments(mapping, out_folder, only)
+    slot_pdfs = {}
+    tried = failed = 0
+    for slot, srcs, frm in resolved:
+        if not srcs:
+            R.append("  スロット%-3s: 対象ファイル無し（from=%s）" % (slot, frm))
+            continue
+        for src in srcs:
+            b = os.path.basename(src)
+            tried += 1
+            pdf, method, err = _ensure_pdf(src, pdf_dir, gray)
+            if not pdf:
+                failed += 1
+                R.append("  ✗ 書類%-3s PDF化失敗: %s（%s）" % (slot, b, err))
+                continue
+            slot_pdfs.setdefault(slot, []).append(pdf)
+            msg = "  ・書類%-3s ← %s → %s（%s）" % (slot, b, os.path.basename(pdf), method)
+            R.append(msg)
+            print(msg)
+    if tried and failed == tried:                       # 全滅＝環境の問題を明示（クライアント初回対策）
+        R.append("  ★ PDF化が全て失敗しました。次をご確認ください：")
+        R.append("     ・Word/Excel（MS Office）がこのPCにインストールされているか")
+        R.append("     ・『初回準備／Setup』を実行して部品(pywin32・PyMuPDF)を導入したか")
+        R.append("     ・変換対象のWord/Excelを開いたままにしていないか（閉じてから再実行）")
+    return slot_pdfs
+
+
+def _upload_slots(page, slot_pdfs, R):
+    """{slot:[pdf…]} を各 #btn_upload_fileupload<slot> に添付してアップロード。成功数を返す。"""
+    okn = 0
+    for slot in sorted(slot_pdfs, key=lambda x: int(x) if x.isdigit() else 999):
+        pdfs = slot_pdfs[slot]
+        ok, msg = _upload_one(page, "#btn_upload_fileupload%s" % slot, pdfs)
+        R.append("  %s 書類%-3s ← %s  … %s"
+                 % ("○" if ok else "×", slot,
+                    " / ".join(os.path.basename(p) for p in pdfs), msg))
+        if ok:
+            okn += 1
+    return okn
+
+
+def run_pdf_convert(mapping):
+    """★--pdf：添付対象の Word/Excel を白黒PDF化して PDF変換フォルダへ出すだけ（ブラウザ不要）。"""
+    _ws, out_folder = load_output_ctx(mapping)
+    R = ["=== PDF変換（--pdf）  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")]
+    if not out_folder:
+        R.append("アウトプット未検出。先に転記実行してください。")
+        print("\n".join(R))
+        return
+    R.append("参照アウトプット: %s" % os.path.basename(out_folder))
+    R.append("Ghostscript: %s" % (find_gs_note()))
+    slot_pdfs = _prepare_slot_pdfs(mapping, out_folder, "", R)
+    total = sum(len(v) for v in slot_pdfs.values())
+    R.append("→ %dスロット・%dファイルをPDF化しました" % (len(slot_pdfs), total))
+    print("\n".join(R))
+    _write_report(R)
+
+
+def find_gs_note():
+    try:
+        import to_pdf as T
+        gs = T.find_ghostscript()
+        return ("あり（高品質・ベクター白黒）: %s" % gs) if gs else "無し（PyMuPDFで画像白黒）"
+    except Exception:
+        return "判定不可"
+
+
 def run_attach_one(page, mapping, only=""):
     """★添付（--attach）。一時保存済みの下書きを開いた状態で実行する。
-       出力フォルダの各ファイルを、先頭番号 → #btn_upload_fileupload<N> の欄へ貼る。
-       only（例 "2"）を指定するとその1件だけ。※送信・申請はしない。"""
+       attachments 設定に従い、ソースを白黒PDF化して #btn_upload_fileupload<slot> へ貼る。
+       only（例 "2"）でそのスロットだけ。※送信・申請はしない。"""
     _out_ws, out_folder = load_output_ctx(mapping)
     R = ["=== 添付（--attach）  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")]
     if not out_folder:
@@ -1325,16 +1436,18 @@ def run_attach_one(page, mapping, only=""):
         print("\n".join(R))
         return
     R.append("参照アウトプット: %s" % os.path.basename(out_folder))
+    R.append("Ghostscript: %s" % find_gs_note())
 
-    groups = _attach_targets(out_folder, mapping, only)
-    if not groups:
-        R.append("対象ファイルがありません（only=%s）" % only)
+    R.append("\n--- 白黒PDF化 ---")
+    slot_pdfs = _prepare_slot_pdfs(mapping, out_folder, only, R)
+    if not slot_pdfs:
+        R.append("  添付できるPDFがありません")
         print("\n".join(R))
+        _write_report(R)
         return
 
     _click_tab(page, mapping.get("attach_tab", "添付書類"))
     page.wait_for_timeout(2000)
-
     if page.locator("input[type='file']").count() == 0:
         try:
             d = page.evaluate(ATTACH_DIAG_JS)
@@ -1347,17 +1460,9 @@ def run_attach_one(page, mapping, only=""):
         _write_report(R)
         return
 
-    R.append("\n--- 添付を実行（%dスロット）---" % len(groups))
-    okn = 0
-    for slot in sorted(groups, key=lambda x: (float(x) if x.replace('.', '', 1).isdigit() else 999)):
-        paths = groups[slot]
-        ok, msg = _upload_one(page, "#btn_upload_fileupload%s" % slot, paths)
-        names = " / ".join(os.path.basename(x) for x in paths)
-        R.append("  %s スロット%-4s ← %s  … %s"
-                 % ("○" if ok else "×", slot, names, msg))
-        if ok:
-            okn += 1
-    R.append("→ %d/%d スロットを処理しました" % (okn, len(groups)))
+    R.append("\n--- 添付を実行（%dスロット）---" % len(slot_pdfs))
+    okn = _upload_slots(page, slot_pdfs, R)
+    R.append("→ %d/%d スロットを処理しました" % (okn, len(slot_pdfs)))
     R.append("※ 送信・申請はしていません。内容は画面でご確認ください。")
 
     try:
@@ -1374,39 +1479,31 @@ def run_attach_one(page, mapping, only=""):
 
 def _attach_files(page, mapping, out_folder):
     """④添付書類（--auto の一時保存後フローから呼ばれる）。
-       ★実DOM: <input type="file" id="btn_upload_fileupload<N>" multiple> の N が書類番号。
-         「ファイル選択」はこの input を装飾したものなので、input に直接ファイルをセットして
-         「アップロード」を押せばよい（file_chooser も不要）。
+       attachments 設定に従い、ソース(Word/Excel)を白黒PDF化して #btn_upload_fileupload<slot> に添付。
        ※ 添付欄は【一時保存した下書き】でしか描画されないサイト仕様のため、必ず保存後に呼ぶこと。
        ※ 送信・申請はしない。"""
     lines = []
     if not out_folder:
         return lines
-    lines.append("\n--- ④添付書類 ---")
+    lines.append("\n--- ④添付書類（白黒PDF化して添付）---")
+    lines.append("  Ghostscript: %s" % find_gs_note())
+
+    # 1) ソースを白黒PDF化（ブラウザ操作の前に済ませる：Office変換は時間がかかるため）
+    slot_pdfs = _prepare_slot_pdfs(mapping, out_folder, "", lines)
+    if not slot_pdfs:
+        lines.append("  添付できるPDFがありません")
+        return lines
+
+    # 2) 添付書類タブを開いて貼る
     if not _click_tab(page, mapping.get("attach_tab", "添付書類")):
         lines.append("  添付書類タブを開けませんでした")
         return lines
     page.wait_for_timeout(1500)
-
     if page.locator("input[type='file']").count() == 0:
         lines.append("  ファイル入力欄がありません（一時保存済みの下書きを開けていない可能性）。")
-        lines.extend(_manual_attach_table(out_folder))
         return lines
-
-    groups = _attach_targets(out_folder, mapping)
-    if not groups:
-        lines.append("  添付対象のファイルが見つかりません")
-        return lines
-    okn = 0
-    for slot in sorted(groups, key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 999):
-        paths = groups[slot]
-        ok, msg = _upload_one(page, "#btn_upload_fileupload%s" % slot, paths)
-        lines.append("  %s 書類%-3s ← %s  … %s"
-                     % ("○" if ok else "×", slot,
-                        " / ".join(os.path.basename(p) for p in paths), msg))
-        if ok:
-            okn += 1
-    lines.append("  → %d/%d スロットを添付しました" % (okn, len(groups)))
+    okn = _upload_slots(page, slot_pdfs, lines)
+    lines.append("  → %d/%d スロットを添付しました" % (okn, len(slot_pdfs)))
     return lines
 
 
@@ -1838,6 +1935,12 @@ def main():
     mode_dump = "--dump" in sys.argv
     mode_auto = "--auto" in sys.argv
     mode_attach = "--attach" in sys.argv
+    mode_pdf = "--pdf" in sys.argv
+
+    if mode_pdf:                                        # ブラウザ不要：PDF化だけ実行して終了
+        run_pdf_convert(load_mapping())
+        return
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:

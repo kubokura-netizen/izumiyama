@@ -69,9 +69,13 @@ goto done
 
 :setup
 echo.
-echo [Setup] Installing Playwright and Chromium (may take 1-2 min)...
-"%PY%" -m pip install playwright
+echo [Setup] Installing required packages (may take 1-2 min)...
+echo   - Playwright (browser automation)  - pywin32 (Word/Excel to PDF)  - PyMuPDF (grayscale)
+"%PY%" -m pip install playwright pywin32 PyMuPDF
 "%PY%" -m playwright install chromium
+echo.
+echo [Setup] Optional (higher quality grayscale): install Ghostscript from
+echo         https://ghostscript.com/releases/gsdnld.html  (64-bit). Not required.
 goto done
 
 :done

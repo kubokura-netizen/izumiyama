@@ -685,6 +685,8 @@ def api_web_setup():
             ("Playwright を導入しています…", [sys.executable, "-m", "pip", "install", "playwright"]),
             ("Chromium ブラウザを導入しています（数分かかることがあります）…",
              [sys.executable, "-m", "playwright", "install", "chromium"]),
+            ("PDF変換部品（pywin32・PyMuPDF）を導入しています…",
+             [sys.executable, "-m", "pip", "install", "pywin32", "PyMuPDF"]),
         ]
         for title, cmd in steps:
             yield _sse("log", {"line": "▶ " + title})
