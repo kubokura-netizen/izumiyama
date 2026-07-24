@@ -38,6 +38,14 @@ def _clean(s):
     return "" if s is None else str(s).strip()
 
 
+def _safe_name(s):
+    """Windowsのフォルダ名として使えない文字を除去/置換する（\\/:*?\"<>| と末尾の . / 空白）。"""
+    s = _clean(s)
+    for ch in '\\/:*?"<>|\t\r\n':
+        s = s.replace(ch, "")
+    return s.strip().rstrip(". ")
+
+
 def _long(path):
     """Windowsの260文字パス上限を回避する拡張パス（\\\\?\\）へ変換。
        深いサブフォルダ内の長いPDF名で copytree が WinError 3 になるのを防ぐ。
@@ -813,6 +821,14 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
     kits = hearing.prp_kits()
     furi = _load_furigana()          # 医療機関名→ルビ（手入力マップ）
     base = os.path.splitext(os.path.basename(hearing_path))[0]
+    # 出力フォルダ名の末尾（命名規則）：法人名（登記簿上）＋医療機関/名称（診療所開設届上）。
+    #   例) 2種関節系PRP_医療法人七徳会大井病院
+    #   ヒアリング未入力のときは従来どおりヒアリングシート名にフォールバック。
+    _houjin = _clean(TX.resolve({"t": "hearing", "label": "法人名（登記簿上）",
+                                 "section": "法人/医療機関"}, hearing, kits)[0])
+    _iryou = _clean(TX.resolve({"t": "hearing", "label": "医療機関/名称（診療所開設届上）",
+                                "section": "法人/医療機関"}, hearing, kits)[0])
+    name_suffix = _safe_name(_houjin + _iryou) or base
     out_folders = []
     log_rows = []
     green_report = []   # 元が緑ターゲットだが未転記だったセル（要確認候補）
@@ -822,7 +838,7 @@ def run_docs(hearing, hearing_path, dir_tpl, dir_output, run_log, run_dt):
         if not os.path.isdir(tpl_folder):
             run_log.append("[%s] テンプレフォルダ無し: %s" % (doc_key, tpl_folder))
             continue
-        out_folder = os.path.join(dir_output, "%s_%s" % (doc["folder"], base))
+        out_folder = os.path.join(dir_output, "%s_%s" % (doc["folder"], name_suffix))
         try:
             if os.path.exists(out_folder):
                 shutil.rmtree(_long(out_folder))
