@@ -1298,30 +1298,51 @@ def _resolve_attachments(mapping, out_folder, only=""):
     return result
 
 
+def _count_delete_controls(page):
+    """アップロード済みファイルに付く「削除」コントロールの総数。反映確認の目印に使う。"""
+    try:
+        return page.locator("xpath=//*[self::a or self::button]"
+                            "[contains(normalize-space(.),'削除')]").count()
+    except Exception:
+        return -1
+
+
 def _upload_one(page, sel, paths):
-    """1スロットにファイル（複数可）をセットして「アップロード」を押す。
-       戻り値: (ok:bool, msg:str)。※送信・申請は行わない（添付のみ）。"""
+    """1スロットにファイル（複数可）をセットし、そのスロット専用の「アップロード」を押して反映を確認する。
+       戻り値: (ok:bool, msg:str)。※送信・申請は行わない（添付のみ）。
+       重要: 画面全体の“最初のアップロード”ではなく、その file 入力の直後にあるボタンだけを押す
+             （前スロットのAJAX処理中に別スロットのボタンを誤爆しないため）。"""
     if isinstance(paths, str):
         paths = [paths]
     fi = page.locator(sel)
     if fi.count() == 0:
         return False, "ファイル入力欄が見つかりません（%s）" % sel
+    before = _count_delete_controls(page)
     try:
         fi.first.set_input_files([os.path.abspath(p) for p in paths])
     except Exception as e:
         return False, "セット失敗 %r" % e
-    page.wait_for_timeout(700)
-    up = page.locator("xpath=//*[self::button or self::a]"
-                      "[contains(normalize-space(.),'アップロード')]")
-    for i in range(up.count()):
-        try:
-            if up.nth(i).is_visible():
-                up.nth(i).click()
-                page.wait_for_timeout(2200)
-                return True, "アップロード済"
-        except Exception:
-            pass
-    return True, "セットのみ（アップロードボタンが見つからず→手動で押してください）"
+    page.wait_for_timeout(800)
+    # このスロットの file 入力の“直後”に現れる最初のアップロードボタンだけを対象にする
+    btn = fi.first.locator("xpath=following::*[self::button or self::a]"
+                           "[contains(normalize-space(.),'アップロード')][1]")
+    if btn.count() == 0:
+        return True, "セットのみ（アップロードボタンが見つからず→手動で押してください）"
+    try:
+        btn.first.scroll_into_view_if_needed()
+        btn.first.click()
+    except Exception as e:
+        return False, "アップロード押下失敗 %r" % e
+    # 反映を待って確認（削除コントロールが増えれば、このスロットにファイルが載った）
+    want = len(paths)
+    for _ in range(16):                       # 最大 ~8秒
+        page.wait_for_timeout(500)
+        after = _count_delete_controls(page)
+        if before >= 0 and after >= before + want:
+            return True, "アップロード済（確認OK）"
+        if before >= 0 and after > before:    # 一部でも増えれば載ったとみなす
+            return True, "アップロード済（%d件確認）" % (after - before)
+    return False, "アップロード未確認（画面に反映されていません。手動で添付してください）"
 
 
 def _latest_receipt():
