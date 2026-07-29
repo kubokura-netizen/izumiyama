@@ -37,9 +37,9 @@ try {
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-    if (-not $TargetDir) {
-        $TargetDir = Join-Path ([Environment]::GetFolderPath('Desktop')) $ToolName
-    }
+    # 既定は「今いるフォルダ（＝セットアップ.bat を置いたフォルダ）」に導入する。
+    # .bat からは -TargetDir で明示的に渡される。単体実行時は現在地を使う。
+    if (-not $TargetDir) { $TargetDir = (Get-Location).Path }
     $isUpdate = Test-Path (Join-Path $TargetDir '98_dashboard\app.py')
 
     Write-Host ''

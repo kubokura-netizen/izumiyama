@@ -12,6 +12,9 @@ rem  bootstrap/install.ps1 (UTF-8 with BOM) fetched from GitHub.
 rem ============================================================
 setlocal
 title PRP tool setup
+rem  Install into the folder where THIS .bat is placed (strip trailing backslash).
+set "HERE=%~dp0"
+if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
 set "URL=https://raw.githubusercontent.com/kubokura-netizen/izumiyama/main/bootstrap/install.ps1"
 set "DST=%TEMP%\prp_install.ps1"
 
@@ -28,6 +31,6 @@ if not exist "%DST%" (
   exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DST%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DST%" -TargetDir "%HERE%"
 del "%DST%" >nul 2>nul
 endlocal
