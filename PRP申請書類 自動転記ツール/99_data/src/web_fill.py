@@ -216,21 +216,65 @@ _ANY_CHECKED_JS = ("(s) => { let o=false; document.querySelectorAll(s)"
                    ".forEach(e => { if (e.checked) o = true; }); return o; }")
 
 
+def _form_xlsx_in(folder):
+    """フォルダ内の様式xlsx（01.*.xlsx 優先、無ければ「様式/提供計画」を含む名前）を返す。"""
+    xls = glob.glob(os.path.join(folder, "01.*.xlsx"))
+    if not xls:
+        xls = [f for f in glob.glob(os.path.join(folder, "*.xlsx"))
+               if not os.path.basename(f).startswith("~$")
+               and ("様式" in os.path.basename(f) or "提供計画" in os.path.basename(f))]
+    return xls[0] if xls else ""
+
+
+def _folder_is_resolved(folder):
+    """そのフォルダが“生成済み（トークン解決済み）”か。様式xlsxに {{…}} が多数残っていれば
+       テンプレ状態とみなし False。様式xlsxが無ければ判定不能として True（除外しない）。"""
+    x = _form_xlsx_in(folder)
+    if not x:
+        return True
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(x, data_only=True, read_only=True)
+        ntok = 0
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for v in row:
+                    if isinstance(v, str) and "{{" in v and "}}" in v:
+                        ntok += 1
+                        if ntok >= 5:                       # トークンだらけ＝未生成
+                            wb.close()
+                            return False
+        wb.close()
+        return True
+    except Exception:
+        return True
+
+
 def _pick_output_folder(mapping):
     """参照元フォルダを決める。優先度:
-       ① --folder=指定 ② 名前が output_folder_contains に一致する最新サブフォルダ
-       ③ 名前不問で最新のサブフォルダ（＝案件名が違っても拾う）
-       ④ 02_output 直下に書類を直接置いた場合はそこ。無ければ ''。"""
+       ① --folder=指定 ② 名前が output_folder_contains に一致するフォルダ（新しい順）
+       ③ 名前不問のサブフォルダ（新しい順）。②③とも“テンプレ状態(未生成)”は飛ばし
+       解決済みの最新を優先する。④ 02_output 直下に書類を直接置いた場合はそこ。無ければ ''。"""
     if _FORCE_FOLDER:
         return _FORCE_FOLDER if os.path.isdir(_FORCE_FOLDER) else ""
     outdir = TX.resolve_dir("02_output")
     subs = [d for d in glob.glob(os.path.join(outdir, "*")) if os.path.isdir(d)]
     want = mapping.get("output_folder_contains", "")
-    named = [d for d in subs if want and want in os.path.basename(d)]
-    if named:
-        return max(named, key=os.path.getmtime)
-    if subs:
-        return max(subs, key=os.path.getmtime)              # 名前不問で最新
+    named = sorted([d for d in subs if want and want in os.path.basename(d)],
+                   key=os.path.getmtime, reverse=True)
+    others = sorted([d for d in subs if d not in named],
+                    key=os.path.getmtime, reverse=True)
+    order = named + others
+    # 解決済み（生成済み）を優先。テンプレ状態は飛ばす。
+    skipped = []
+    for d in order:
+        if _folder_is_resolved(d):
+            if skipped:
+                print("  ※ テンプレ状態(未生成)のためスキップ: %s" % ", ".join(skipped))
+            return d
+        skipped.append(os.path.basename(d))
+    if order:
+        return order[0]                                     # 全部テンプレ状態→最新（後段で警告）
     if (glob.glob(os.path.join(outdir, "01.*.xlsx"))
             or glob.glob(os.path.join(outdir, "*.docx"))
             or glob.glob(os.path.join(outdir, "*.pdf"))):
