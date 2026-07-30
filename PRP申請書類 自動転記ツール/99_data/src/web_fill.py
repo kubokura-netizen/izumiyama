@@ -1785,17 +1785,19 @@ def _write_report(lines):
     return path, ts
 
 
-def run_auto(page, mapping, hearing, kits, resume=False):
+def run_auto(page, mapping, hearing, kits, resume=False, keep_existing=False):
     """全タブ/全ページを自動で送りながら全欄を入力し、最後に一時保存。不備は箇所を報告。
-       resume=True（ログイン再開）: 既存入力を上書きせず、「次の項目へ」でページ送りしながら埋める。"""
+       resume=True（ログイン再開）: 「次の項目へ」でページ送りしながら埋める。
+       keep_existing=True のときだけ既存入力を上書きしない（既定は上書きする）。"""
     global _NO_OVERWRITE
-    _NO_OVERWRITE = bool(resume)
+    _NO_OVERWRITE = bool(keep_existing)
     out_ws, out_folder = load_output_ctx(mapping)
     src_line = ("参照元(アウトプット): %s ／ 様式xlsx=%s"
                 % (os.path.basename(out_folder), "あり" if out_ws is not None else "なし")) \
         if out_folder else "※ アウトプット未検出 → ヒアリングから取得（先に転記実行.batを推奨）"
     if resume:
-        src_line += " ／ モード=ログイン再開（既存入力は保持・ページ送り）"
+        src_line += (" ／ モード=ログイン再開（%s・ページ送り）"
+                     % ("既存入力は保持" if keep_existing else "既存入力も上書き"))
     print(src_line)
 
     # ★1操作あたりの待機上限（既定30秒だと、別タブの要素を触った時に長時間フリーズするため）
@@ -2206,10 +2208,15 @@ def main():
             print("    ① 上の受付番号/パスワードでログイン（手動・ツールには保存しません）")
             print("    ② 対象の申請を開き、【編集画面の先頭ページ】を表示する")
             print("    ③ 参照元＝作成済み書類（02_output。--folder= で指定も可）")
+            keep = "--keep" in sys.argv
             input("  そこまで進めたら、このウィンドウで Enter（自動入力→一時保存→添付を開始）…")
-            print("  ※ 空いている欄だけ入力（既存入力は保持）し、「次の項目へ」で自動ページ送り。")
+            if keep:
+                print("  ※ 空いている欄だけ入力（既存入力は保持）。「次の項目へ」で自動ページ送り。")
+            else:
+                print("  ※ 既存の入力も上書きして入力します（保持したい場合は --keep）。")
+                print("     「次の項目へ」で自動ページ送り。")
             print("     一時保存と添付まで行います（送信はしません）。")
-            run_auto(page, mapping, hearing, kits, resume=True)
+            run_auto(page, mapping, hearing, kits, resume=True, keep_existing=keep)
             input("\n  結果を確認したら Enter でブラウザを閉じます…")
         elif mode_attach:
             only = ""
