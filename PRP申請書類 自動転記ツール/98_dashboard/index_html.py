@@ -249,8 +249,8 @@ INDEX_HTML = r"""<!doctype html>
     <div id="webHint" class="muted" style="margin-bottom:12px"></div>
 
     <div class="run-row" id="webControls">
-      <button class="btn" id="webAuto">🚀 新規作成で開始（一括転記）</button>
-      <button class="btn" id="webResume">🔑 既存申請に転記（ログイン再開）</button>
+      <button class="btn" id="webAuto">🚀 オート一括転記（新規作成）</button>
+      <button class="btn" id="webResume">🔑 既存申請にログインして転記</button>
       <button class="btn ghost" id="webFill" disabled>▶ 一括入力を実行</button>
       <button class="btn ghost" id="webQuit" disabled>✔ 終了</button>
       <button class="btn ghost sm" id="webStop" disabled>⏹ 強制停止</button>
