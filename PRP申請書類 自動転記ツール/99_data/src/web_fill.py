@@ -759,8 +759,12 @@ def build_plan(mapping, hearing, kits, out_ws, out_folder):
         if not (fld.get("selector") or fld.get("label")):
             continue
         val = _resolve_value(fld, hearing, kits, out_ws, out_folder)
+        was_token = bool(val) and "{{" in val and "}}" in val
+        if was_token:
+            val = ""                                   # 未解決トークンはフォームに書かない（保険）
         item = {"idx": idx, "fld": fld, "val": val,
-                "desc": _field_display(fld, idx), "status": "pending", "error": ""}
+                "desc": _field_display(fld, idx), "status": "pending", "error": "",
+                "was_token": was_token}
         _apply_overflow(item, mapping)
         plan.append(item)
     return plan
@@ -1758,6 +1762,11 @@ def run_auto(page, mapping, hearing, kits, resume=False):
 
     plan = build_plan(mapping, hearing, kits, out_ws, out_folder)
     max_sections = int(mapping.get("max_sections", 25))
+    _ntok = sum(1 for i in plan if i.get("was_token"))
+    if _ntok:
+        print("  ⚠ 参照元が未完成（テンプレ状態）です：%d欄が {{変数}} のまま。"
+              "その欄は入力しません。先に『転記実行』で書類生成を、"
+              "または --folder= で正しい出力フォルダを指定してください。" % _ntok)
     print("自動一括入力を開始します（%d欄・最大%dタブ）…" % (len(plan), max_sections))
 
     def _fill_pass(label):
@@ -1876,6 +1885,14 @@ def run_auto(page, mapping, hearing, kits, resume=False):
     R.append("入力できた欄: %d / %d" % (len(placed), len(plan)))
     if kept:
         R.append("既存のまま保持した欄: %d（上書きしませんでした）" % len(kept))
+    tokened = [i for i in plan if i.get("was_token")]
+    if tokened:
+        R.append("")
+        R.append("⚠⚠ 参照元が“未完成（テンプレ状態）”です：%d欄が {{変数}} のままでした。" % len(tokened))
+        R.append("    → その欄はフォームに書き込みませんでした（{{…}} を貼らないため）。")
+        R.append("    → 先に『転記実行』で書類を生成するか、正しい出力フォルダを指定してください")
+        R.append("       （web_fill.py --folder=\"02_output\\該当フォルダ\"）。")
+        R.append("    参照中フォルダ: %s" % (os.path.basename(out_folder) if out_folder else "(不明)"))
 
     def sel_of(i):
         return i["fld"].get("selector") or i["fld"].get("label") or ""
