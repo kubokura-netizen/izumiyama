@@ -1733,7 +1733,12 @@ def run_auto(page, mapping, hearing, kits):
         for item in plan:
             if item["status"] == "placed":
                 continue
-            st = _place_field(page, item)
+            try:
+                st = _place_field(page, item)          # ★1欄の失敗で全体を止めない（最初のタブで
+            except Exception as e:                     #   例外→run_auto全体が落ちる事故を防ぐ）
+                item["status"] = "error"
+                item["error"] = repr(e)
+                continue
             if st == "absent":
                 continue                               # このタブには無い→別タブで再挑戦
             item["status"] = st                        # placed/empty/no-choice/error は確定
@@ -1741,12 +1746,18 @@ def run_auto(page, mapping, hearing, kits):
                 placed_here += 1
         print("  %s: %d欄入力" % (label, placed_here))
 
+    def _safe_click_tab(name):
+        try:
+            return _click_tab(page, name)
+        except Exception:
+            return False
+
     tabs = mapping.get("tabs")
     if tabs:
         # ★タブ式フォーム：各タブを順に開いて処理（表示されて初めてチェック等が押せる）
         _fill_pass("現タブ")
         for tabname in tabs:
-            if _click_tab(page, tabname):
+            if _safe_click_tab(tabname):
                 page.wait_for_timeout(500)
                 _fill_pass(tabname)
             else:
@@ -1754,7 +1765,7 @@ def run_auto(page, mapping, hearing, kits):
         # 取りこぼし対策にもう一巡（前タブで未表示だったチェック等を回収）
         for tabname in tabs:
             if any(i["status"] not in ("placed", "empty", "no-choice", "error") for i in plan):
-                if _click_tab(page, tabname):
+                if _safe_click_tab(tabname):
                     page.wait_for_timeout(300)
                     _fill_pass(tabname + "(再)")
 
@@ -1784,7 +1795,7 @@ def run_auto(page, mapping, hearing, kits):
             print("  ↻ 解除されたチェックを入れ直します: %s" % ", ".join(reverted))
             for tabname in tabs:
                 if any(i["status"] == "pending" for i in plan):
-                    if _click_tab(page, tabname):
+                    if _safe_click_tab(tabname):
                         page.wait_for_timeout(400)
                         _fill_pass(tabname + "(確定)")
     else:
