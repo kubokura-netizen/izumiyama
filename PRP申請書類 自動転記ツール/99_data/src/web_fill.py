@@ -208,6 +208,13 @@ def _pref_split(addr):
 # --folder=<パス> 指定で参照元フォルダを固定できる（乱雑に置いた書類でもこれで確実に指せる）
 _FORCE_FOLDER = ""
 
+# ログイン再開（--resume）時に True。既に値が入っている欄は上書きしない（既存入力を尊重）。
+_NO_OVERWRITE = False
+
+# セレクタ集合の中に checked の要素があるか（ラジオ/チェックの既存選択判定）
+_ANY_CHECKED_JS = ("(s) => { let o=false; document.querySelectorAll(s)"
+                   ".forEach(e => { if (e.checked) o = true; }); return o; }")
+
 
 def _pick_output_folder(mapping):
     """参照元フォルダを決める。優先度:
@@ -917,6 +924,12 @@ def _place_field(page, item):
             cnt = radios.count()
             if cnt == 0:
                 return "absent"                        # このDOMに無い
+            if _NO_OVERWRITE:                           # 既に選択済みなら触らない（既存を尊重）
+                try:
+                    if page.evaluate(_ANY_CHECKED_JS, grp):
+                        return "kept"
+                except Exception:
+                    pass
             choice = fld.get("choice") or val
             if not choice:
                 return "empty"
@@ -980,6 +993,13 @@ def _place_field(page, item):
                     return "absent"
             except Exception:
                 pass
+            if _NO_OVERWRITE:                          # 既に選択済みなら触らない
+                try:
+                    cur = loc.input_value()
+                except Exception:
+                    cur = ""
+                if (cur or "").strip():
+                    return "kept"
             try:
                 loc.select_option(label=val)
             except Exception:
@@ -1001,6 +1021,13 @@ def _place_field(page, item):
                     return "absent"
             except Exception:
                 pass
+            if _NO_OVERWRITE:                          # 既に入力済みなら上書きしない（既存を尊重）
+                try:
+                    cur = loc.input_value()
+                except Exception:
+                    cur = ""
+                if (cur or "").strip():
+                    return "kept"
             loc.fill(str(val))
         try:
             loc.evaluate(_HILITE_JS2)
@@ -1710,12 +1737,17 @@ def _write_report(lines):
     return path, ts
 
 
-def run_auto(page, mapping, hearing, kits):
-    """全タブを自動で送りながら全欄を入力し、最後に一時保存。不備は箇所を報告。"""
+def run_auto(page, mapping, hearing, kits, resume=False):
+    """全タブ/全ページを自動で送りながら全欄を入力し、最後に一時保存。不備は箇所を報告。
+       resume=True（ログイン再開）: 既存入力を上書きせず、「次の項目へ」でページ送りしながら埋める。"""
+    global _NO_OVERWRITE
+    _NO_OVERWRITE = bool(resume)
     out_ws, out_folder = load_output_ctx(mapping)
     src_line = ("参照元(アウトプット): %s ／ 様式xlsx=%s"
                 % (os.path.basename(out_folder), "あり" if out_ws is not None else "なし")) \
         if out_folder else "※ アウトプット未検出 → ヒアリングから取得（先に転記実行.batを推奨）"
+    if resume:
+        src_line += " ／ モード=ログイン再開（既存入力は保持・ページ送り）"
     print(src_line)
 
     # ★1操作あたりの待機上限（既定30秒だと、別タブの要素を触った時に長時間フリーズするため）
@@ -1753,7 +1785,26 @@ def run_auto(page, mapping, hearing, kits):
             return False
 
     tabs = mapping.get("tabs")
-    if tabs:
+    if resume:
+        # ★ログイン再開：既存申請の編集画面は「次の項目へ」でページ送りする形が多い。
+        #   現ページを埋める→次へ→…を繰り返して全ページを巡回する（既存入力は保持）。
+        _fill_pass("現ページ")
+        advanced = False
+        for sec in range(max_sections):
+            if _click_next(page, mapping):
+                advanced = True
+                page.wait_for_timeout(500)
+                _fill_pass("ページ%d" % (sec + 2))
+            else:
+                break
+        if not advanced and tabs:
+            # 「次へ」が無い＝タブ式だった → タブでも巡回してみる
+            print("  （「次の項目へ」が見つからないためタブで巡回します）")
+            for tabname in tabs:
+                if _safe_click_tab(tabname):
+                    page.wait_for_timeout(400)
+                    _fill_pass(tabname)
+    elif tabs:
         # ★タブ式フォーム：各タブを順に開いて処理（表示されて初めてチェック等が押せる）
         _fill_pass("現タブ")
         for tabname in tabs:
@@ -1807,6 +1858,7 @@ def run_auto(page, mapping, hearing, kits):
 
     # ---- レポート集計 ----
     placed = [i for i in plan if i["status"] == "placed"]
+    kept = [i for i in plan if i["status"] == "kept"]           # 既存入力を尊重して触らなかった
     empty = [i for i in plan if i["status"] == "empty"]
     notfound = [i for i in plan if i["status"] == "pending"]     # どのタブにも無かった
     nochoice = [i for i in plan if i["status"] == "no-choice"]
@@ -1822,6 +1874,8 @@ def run_auto(page, mapping, hearing, kits):
     R.append("=== Web自動一括入力 レポート  (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     R.append(src_line)
     R.append("入力できた欄: %d / %d" % (len(placed), len(plan)))
+    if kept:
+        R.append("既存のまま保持した欄: %d（上書きしませんでした）" % len(kept))
 
     def sel_of(i):
         return i["fld"].get("selector") or i["fld"].get("label") or ""
@@ -2089,11 +2143,12 @@ def main():
         elif mode_resume:
             print("\n  ▼既存申請への転記（途中再開）")
             print("    ① 上の受付番号/パスワードでログイン（手動・ツールには保存しません）")
-            print("    ② 対象の申請を開き、【編集画面の先頭タブ】を表示する")
+            print("    ② 対象の申請を開き、【編集画面の先頭ページ】を表示する")
             print("    ③ 参照元＝作成済み書類（02_output。--folder= で指定も可）")
-            input("  そこまで進めたら、このウィンドウで Enter（自動一括入力→一時保存→添付を開始）…")
-            print("  ※ 全タブを自動で入力し、一時保存と添付まで行います（送信はしません）。")
-            run_auto(page, mapping, hearing, kits)
+            input("  そこまで進めたら、このウィンドウで Enter（自動入力→一時保存→添付を開始）…")
+            print("  ※ 空いている欄だけ入力（既存入力は保持）し、「次の項目へ」で自動ページ送り。")
+            print("     一時保存と添付まで行います（送信はしません）。")
+            run_auto(page, mapping, hearing, kits, resume=True)
             input("\n  結果を確認したら Enter でブラウザを閉じます…")
         elif mode_attach:
             only = ""
