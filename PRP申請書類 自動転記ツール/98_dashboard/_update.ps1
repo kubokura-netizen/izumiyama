@@ -74,10 +74,13 @@ try {
     if (-not $marker) { throw '展開物にツール本体（98_dashboard\app.py）が見つかりませんでした。' }
     $srcTool = Split-Path -Parent (Split-Path -Parent $marker.FullName)
 
-    Info '[3/4] コードを最新化しています（患者情報・実行環境は保持）...'
+    Info '[3/4] コードを最新化しています（患者情報・テンプレート・実行環境は保持）...'
     # 上書き・削除してはいけないフォルダ
+    #   99_data\テンプレート … クライアントが編集する資材のため保持（方針B）。
+    #                          様式改良はGoogleドライブ等で別途共有する運用。
     $keep = @(
         '01_input【ヒアリングシートをここへ】', '02_output【転記済みファイルがここに生成】', '03_logs',
+        '99_data\テンプレート',
         '_runtime', '.venv_dashboard', '_web_profile', '.git', '.claude', '__pycache__'
     )
     # robocopy は splatting で渡す（日本語・空白・角括弧の引用符問題を回避）

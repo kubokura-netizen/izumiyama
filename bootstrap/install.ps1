@@ -74,9 +74,11 @@ try {
     # --- 2. コードを配置（初回=丸ごと / 更新=データ保持で上書き）---------
     New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
     if ($isUpdate) {
-        Info '[2/4] コードを最新化しています（患者情報・実行環境は保持）...'
+        Info '[2/4] コードを最新化しています（患者情報・テンプレート・実行環境は保持）...'
+        # 99_data\テンプレート … クライアント編集資材のため保持（方針B）
         $keep = @(
             '01_input【ヒアリングシートをここへ】', '02_output【転記済みファイルがここに生成】', '03_logs',
+            '99_data\テンプレート',
             '_runtime', '.venv_dashboard', '_web_profile', '.git', '.claude', '__pycache__'
         )
         $ra = @($srcTool, $TargetDir, '/E', '/R:2', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
