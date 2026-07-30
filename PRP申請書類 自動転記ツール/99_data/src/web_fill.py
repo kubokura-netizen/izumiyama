@@ -205,24 +205,52 @@ def _pref_split(addr):
     return pref, (addr[len(pref):] if pref else addr)
 
 
-def load_output_ctx(mapping):
-    """02_output の最新の出力フォルダ（output_folder_contains で絞る）を探し、
-       様式xlsxシート ws とフォルダパス folder を返す。Webの参照元＝アウトプット。
-       無ければ (None, '')。"""
-    import openpyxl
+# --folder=<パス> 指定で参照元フォルダを固定できる（乱雑に置いた書類でもこれで確実に指せる）
+_FORCE_FOLDER = ""
+
+
+def _pick_output_folder(mapping):
+    """参照元フォルダを決める。優先度:
+       ① --folder=指定 ② 名前が output_folder_contains に一致する最新サブフォルダ
+       ③ 名前不問で最新のサブフォルダ（＝案件名が違っても拾う）
+       ④ 02_output 直下に書類を直接置いた場合はそこ。無ければ ''。"""
+    if _FORCE_FOLDER:
+        return _FORCE_FOLDER if os.path.isdir(_FORCE_FOLDER) else ""
     outdir = TX.resolve_dir("02_output")
-    want = mapping.get("output_folder_contains", "2種関節系PRP")
-    folders = [d for d in glob.glob(os.path.join(outdir, "*"))
-               if os.path.isdir(d) and want in os.path.basename(d)]
-    if not folders:
+    subs = [d for d in glob.glob(os.path.join(outdir, "*")) if os.path.isdir(d)]
+    want = mapping.get("output_folder_contains", "")
+    named = [d for d in subs if want and want in os.path.basename(d)]
+    if named:
+        return max(named, key=os.path.getmtime)
+    if subs:
+        return max(subs, key=os.path.getmtime)              # 名前不問で最新
+    if (glob.glob(os.path.join(outdir, "01.*.xlsx"))
+            or glob.glob(os.path.join(outdir, "*.docx"))
+            or glob.glob(os.path.join(outdir, "*.pdf"))):
+        return outdir                                       # 直下に置いた場合
+    return ""
+
+
+def load_output_ctx(mapping):
+    """参照元フォルダ（_pick_output_folder）を探し、様式xlsxシート ws とフォルダ folder を返す。
+       Webの参照元＝アウトプット。無ければ (None, '')。"""
+    import openpyxl
+    folder = _pick_output_folder(mapping)
+    if not folder:
         return None, ""
-    folder = max(folders, key=os.path.getmtime)
     ws = None
     xls = glob.glob(os.path.join(folder, "01.*.xlsx"))
+    if not xls:                                             # 「01.」始まりが無ければ様式らしきxlsxを拾う
+        xls = [f for f in glob.glob(os.path.join(folder, "*.xlsx"))
+               if not os.path.basename(f).startswith("~$")
+               and ("様式" in os.path.basename(f) or "提供計画" in os.path.basename(f))]
     if xls:
-        wb = openpyxl.load_workbook(xls[0], data_only=True)
-        sh = mapping.get("output_sheet", "1 の２提供計画（治療）")
-        ws = wb[sh] if sh in wb.sheetnames else wb[wb.sheetnames[0]]
+        try:
+            wb = openpyxl.load_workbook(xls[0], data_only=True)
+            sh = mapping.get("output_sheet", "1 の２提供計画（治療）")
+            ws = wb[sh] if sh in wb.sheetnames else wb[wb.sheetnames[0]]
+        except Exception:
+            ws = None
     return ws, folder
 
 
@@ -505,17 +533,18 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
     src = fld.get("source")
     if src:
         t = src.get("t")
+        if t == "today" and src.get("fmt") in ("year", "month", "day"):
+            d = datetime.datetime.now()
+            return {"year": str(d.year), "month": "%02d" % d.month, "day": str(d.day)}[src.get("fmt")]
+        if hearing is None:
+            # ヒアリング未読込（作成済み書類のみで転記する運用）→ 既定値/空でスキップ
+            return TX.clean(fld.get("value", ""))
         if t in ("pref", "addr_body"):
             inner = src.get("source") or {"t": "hearing",
                     "label": "医療機関/住所（診療所開設届上）", "section": "法人/医療機関"}
             addr, _ = TX.resolve(inner, hearing, kits)
             pref, body = _pref_split(addr)
             return pref if t == "pref" else body
-        if t == "today" and src.get("fmt") in ("year", "month", "day"):
-            # ※ここで import datetime すると関数全体で datetime がローカル扱いになり、
-            #   上の date_year/month/day 分解で UnboundLocalError になる（モジュール先頭で import 済み）。
-            d = datetime.datetime.now()
-            return {"year": str(d.year), "month": "%02d" % d.month, "day": str(d.day)}[src.get("fmt")]
         v, _ = TX.resolve(src, hearing, kits)
         v = TX.clean(v)
         # トークン名指定（採血量・治療価格・キット製造方法等の汎用解決）
@@ -1973,10 +2002,17 @@ def run_auto(page, mapping, hearing, kits):
 
 
 def main():
+    global _FORCE_FOLDER
     mode_dump = "--dump" in sys.argv
     mode_auto = "--auto" in sys.argv
     mode_attach = "--attach" in sys.argv
     mode_pdf = "--pdf" in sys.argv
+    mode_resume = "--resume" in sys.argv               # 既存申請にログインして転記（途中再開）
+
+    for a in sys.argv:                                  # 参照元フォルダを明示指定（乱雑配置対策）
+        if a.startswith("--folder="):
+            p = a.split("=", 1)[1].strip().strip('"')
+            _FORCE_FOLDER = os.path.abspath(p) if p else ""
 
     if mode_pdf:                                        # ブラウザ不要：PDF化だけ実行して終了
         run_pdf_convert(load_mapping())
@@ -1996,10 +2032,14 @@ def main():
 
     hearing = kits = None
     if not mode_dump and not mode_attach:              # 添付テストはヒアリング不要（起動を速く）
-        hp = find_hearing()
-        hearing = TX.Hearing(hp, hearing_sheet)
-        kits = hearing.prp_kits()
-        print("ヒアリング:", os.path.basename(hp))
+        # ★ヒアリングは任意。無くても「作成済み書類（アウトプット）だけ」で転記できる。
+        try:
+            hp = find_hearing()
+            hearing = TX.Hearing(hp, hearing_sheet)
+            kits = hearing.prp_kits()
+            print("ヒアリング:", os.path.basename(hp))
+        except Exception:
+            print("ヒアリング未検出 → 作成済み書類（アウトプット）だけで転記します。")
 
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
@@ -2009,10 +2049,9 @@ def main():
         #   アップロード部品が描画されない）。plan01へ直行すると“まっさらなフォーム”に戻って
         #   しまうため、サイトのトップを開いて利用者が下書きへ進めるようにする。
         start = url
-        if mode_attach:
-            # ★添付は「一時保存した下書き」でしか欄が出ないサイト仕様。下書きURLへの直行は
-            #   セッション次第で表示できないため、ログイン画面を開いて手動ログインしてもらう。
-            #   受付番号/パスワードは 03_logs の最新レポートから拾って表示する（貼り付け用）。
+        if mode_attach or mode_resume:
+            # ★添付/途中再開は「ログイン後の既存下書き」で行う。ログイン画面を開いて手動ログイン。
+            #   受付番号/パスワードは自分で入力（ツールには保存しない）。--no= 指定で控えを表示可。
             start = mapping.get("attach_login_url",
                                 "https://saiseiiryo.mhlw.go.jp/application/login/plan")
             no, pw, src = _latest_receipt()
@@ -2029,10 +2068,22 @@ def main():
             page.goto(start, wait_until="domcontentloaded", timeout=60000)
         except Exception:
             pass
-        print("\n▼ ブラウザが開きました（このサイトはログイン不要）。")
+        if mode_attach or mode_resume:
+            print("\n▼ ブラウザが開きました。受付番号／パスワードでログインしてください（手動）。")
+        else:
+            print("\n▼ ブラウザが開きました（新規作成の場合、このサイトはログイン不要）。")
         if mode_dump:
             input("  対象フォームを表示したら、このウィンドウで Enter（入力欄を抽出します）…")
             dump_fields(page)
+        elif mode_resume:
+            print("\n  ▼既存申請への転記（途中再開）")
+            print("    ① 上の受付番号/パスワードでログイン（手動・ツールには保存しません）")
+            print("    ② 対象の申請を開き、【編集画面の先頭タブ】を表示する")
+            print("    ③ 参照元＝作成済み書類（02_output。--folder= で指定も可）")
+            input("  そこまで進めたら、このウィンドウで Enter（自動一括入力→一時保存→添付を開始）…")
+            print("  ※ 全タブを自動で入力し、一時保存と添付まで行います（送信はしません）。")
+            run_auto(page, mapping, hearing, kits)
+            input("\n  結果を確認したら Enter でブラウザを閉じます…")
         elif mode_attach:
             only = ""
             for a in sys.argv:

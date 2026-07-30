@@ -249,12 +249,17 @@ INDEX_HTML = r"""<!doctype html>
     <div id="webHint" class="muted" style="margin-bottom:12px"></div>
 
     <div class="run-row" id="webControls">
-      <button class="btn" id="webAuto">🚀 ブラウザを開いて開始（一括転記）</button>
+      <button class="btn" id="webAuto">🚀 新規作成で開始（一括転記）</button>
+      <button class="btn" id="webResume">🔑 既存申請に転記（ログイン再開）</button>
       <button class="btn ghost" id="webFill" disabled>▶ 一括入力を実行</button>
       <button class="btn ghost" id="webQuit" disabled>✔ 終了</button>
       <button class="btn ghost sm" id="webStop" disabled>⏹ 強制停止</button>
       <span class="muted" id="webState"></span>
     </div>
+    <div class="muted" style="margin-top:6px;font-size:11.5px">
+      「既存申請に転記」は、<b>すでに受付番号・パスワードが発行済み</b>の申請に使います。
+      ログイン画面が開くので<b>手動でログイン</b>→対象申請の<b>編集画面（先頭タブ）</b>を表示→「一括入力を実行」。
+      参照元は <code>02_output</code> の作成済み書類（ヒアリングシート不要）。<b>送信はしません。</b></div>
 
     <details style="margin-top:12px">
       <summary class="muted" style="cursor:pointer">上級者向け：フォーム項目を抽出（web_mapping 作成・メンテ用）</summary>
@@ -528,6 +533,7 @@ function webLineClass(line){
 }
 function webSetControls(){
   $("#webAuto").disabled  = webRunning;
+  $("#webResume").disabled= webRunning;
   $("#webFill").disabled  = !webRunning;
   $("#webQuit").disabled  = !webRunning;
   $("#webStop").disabled  = !webRunning;
@@ -571,6 +577,8 @@ function webStartSession(mode){
   webEs.addEventListener("ready", ()=>{
     $("#webState").textContent = (mode==="dump")
       ? "ブラウザで対象フォームを表示し、「抽出を実行」を押してください。"
+      : (mode==="resume")
+      ? "受付番号/パスワードでログイン→対象申請の編集画面（先頭タブ）を表示し、「一括入力を実行」を押してください。"
       : "ブラウザでplan01の先頭タブを表示し、「一括入力を実行」を押してください（全タブ自動→一時保存→添付）。";
   });
   webEs.addEventListener("log", e=>{
@@ -643,6 +651,7 @@ async function homeRefreshSetup(){
 }
 
 $("#webAuto").onclick =()=>webStartSession("auto");
+$("#webResume").onclick =()=>webStartSession("resume");
 $("#webFill").onclick =()=>webSend("fill");
 $("#webQuit").onclick =()=>webSend("quit");
 $("#webStop").onclick =webStopHard;

@@ -607,7 +607,7 @@ def api_web_start():
        mode=fill: タブごと手動送りの自動入力 / mode=auto: 全タブ一括入力→一時保存まで自動 /
        mode=dump: フォーム項目の抽出（メンテ用）。いずれも送信はしない。"""
     mode = request.args.get("mode", "fill")
-    flag = {"dump": ["--dump"], "auto": ["--auto"]}.get(mode, [])
+    flag = {"dump": ["--dump"], "auto": ["--auto"], "resume": ["--resume"]}.get(mode, [])
     args = [sys.executable, WEB_FILL] + flag
 
     @stream_with_context

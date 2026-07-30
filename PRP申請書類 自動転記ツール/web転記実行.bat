@@ -20,15 +20,17 @@ echo   Web Auto-Fill Tool  (e-Saisei / plan01)
 echo ============================================================
 echo   1 : Auto-fill (step)  (fill per tab, press Enter between tabs)
 echo   A : Auto-fill (bulk)  (all tabs at once -^> temp-save) *never submits*
+echo   R : Resume existing   (--resume / login to an issued app, then fill+save+attach)
 echo   2 : Dump fields       (--dump / to build the mapping)
 echo   T : Attach TEST       (--attach / try ONE file on the attach tab)
 echo   3 : Setup             (install Playwright, first time only)
 echo   Q : Quit
 echo ------------------------------------------------------------
 set "sel="
-set /p "sel=Type 1/A/2/T/3/Q and press Enter: "
+set /p "sel=Type 1/A/R/2/T/3/Q and press Enter: "
 if /i "%sel%"=="1" goto fill
 if /i "%sel%"=="A" goto autofill
+if /i "%sel%"=="R" goto resume
 if /i "%sel%"=="2" goto dump
 if /i "%sel%"=="T" goto attach
 if /i "%sel%"=="3" goto setup
@@ -58,6 +60,16 @@ echo             The tool fills ALL tabs automatically, then clicks TEMP-SAVE.
 echo             If a required field is missing it stops and reports where.
 echo             It NEVER clicks submit/apply. Report: 03_logs\web_autofill_report_*.txt
 "%PY%" "%~dp099_data\src\web_fill.py" --auto
+goto done
+
+:resume
+echo.
+echo [Resume existing] For applications that ALREADY have a receipt no./password.
+echo             A login page opens. Log in MANUALLY, open the target application's
+echo             EDIT screen (first tab), then press Enter here.
+echo             Source = your finished docs in 02_output (no hearing sheet needed).
+echo             It fills all tabs, temp-saves and attaches. It NEVER submits.
+"%PY%" "%~dp099_data\src\web_fill.py" --resume
 goto done
 
 :dump
