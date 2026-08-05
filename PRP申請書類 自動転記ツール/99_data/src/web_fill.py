@@ -1385,20 +1385,71 @@ def _ensure_pdf(src, pdf_dir, gray=True):
         return "", "error", repr(e)
 
 
+def _leading_slots(basename):
+    """ファイル名の頭の番号 → 添付スロット番号のリスト（案件名・様式差に強い汎用ルール）。
+       ・様式(提供計画)/医療機関一覧 は添付しない（参照元・対象外）
+       ・アセント文書 → 4 と 5
+       ・「04-05」「04.05」→ 4 と 5、「17.」「02」→ その番号
+       ・1（様式/意見書）や範囲外は除外（2〜17のみ）"""
+    b = basename or ""
+    if b.startswith("~$"):
+        return []
+    if ("提供計画" in b) or ("様式" in b) or ("医療機関一覧" in b):
+        return []
+    if "アセント" in b:
+        return ["4", "5"]
+    m = _re.match(r"\s*0*(\d{1,2})(?:[.\-]\s*0*(\d{1,2}))?", b)
+    if not m:
+        return []
+    n1 = int(m.group(1))
+    n2 = int(m.group(2)) if m.group(2) else None
+    # 「4-5」「4.5」「04-05」だけを“範囲(4と5)”とする。
+    # 「16-2」「16-13」等は 16 がスロットで -N は枝番なので、先頭番号だけを使う。
+    if n1 == 4 and n2 == 5:
+        return ["4", "5"]
+    return [str(n1)] if 2 <= n1 <= 17 else []
+
+
 def _resolve_attachments(mapping, out_folder, only=""):
-    """attachments 設定 → [(slot, [ソースファイル…]), …]。from=SOP は別フォルダから拾う。
-       only(スロット番号)指定でそのスロットのみ。"""
+    """添付スロット → ソースファイル群を解決。名前一致(既存config)と『頭の数字』を併用。
+       from=SOP は別フォルダも走査。only(スロット番号)指定でそのスロットのみ。"""
     sop = _related_folder(out_folder, mapping, mapping.get("sop_folder_contains", "SOP"))
-    result = []
+    slots = {}
+
+    def add(slot, f):
+        slot = str(slot)
+        slots.setdefault(slot, [])
+        if f not in slots[slot]:
+            slots[slot].append(f)
+
+    # ① 既存の名前一致（from=SOP は別フォルダから）
     for a in mapping.get("attachments", []):
         if not isinstance(a, dict):
             continue
         slot = str(a.get("slot", "")).strip()
-        if not slot or (only and slot != only):
+        if not slot:
             continue
         folder = sop if a.get("from") == "SOP" else out_folder
-        srcs = _find_source_files(folder, a.get("match", "")) if folder else []
-        result.append((slot, srcs, a.get("from", "case")))
+        for f in (_find_source_files(folder, a.get("match", "")) if folder else []):
+            add(slot, f)
+
+    # ② 頭の数字（out_folder と SOPフォルダの両方）＝従来対象外の番号でも確実に貼る
+    if mapping.get("attach_by_leading_number", True):
+        for folder in (out_folder, sop):
+            if not folder or not os.path.isdir(folder):
+                continue
+            for f in sorted(glob.glob(os.path.join(folder, "*"))):
+                b = os.path.basename(f)
+                if os.path.splitext(b)[1].lower() not in _ATTACH_EXTS:
+                    continue
+                for slot in _leading_slots(b):
+                    add(slot, f)
+
+    result = []
+    for slot in sorted(slots, key=lambda x: int(x) if x.isdigit() else 999):
+        if only and slot != only:
+            continue
+        result.append((slot, slots[slot], "auto"))
     return result
 
 
