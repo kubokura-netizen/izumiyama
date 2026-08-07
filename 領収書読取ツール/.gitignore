@@ -2,6 +2,7 @@
 # ※ .gitignore は行末コメント非対応。コメントは必ず独立行に書く。
 .venv/
 _ocr/
+_runtime/
 __pycache__/
 *.pyc
 ~$*

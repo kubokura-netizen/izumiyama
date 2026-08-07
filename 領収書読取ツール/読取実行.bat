@@ -11,17 +11,23 @@ cd /d "%~dp0"
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
-set "PY=.venv\Scripts\python.exe"
+rem Prefer bundled runtime (client), then dev venv, then system python
+set "PY=_runtime\python\python.exe"
+if not exist "%PY%" set "PY=.venv\Scripts\python.exe"
 if not exist "%PY%" (
+  where py >nul 2>nul && set "PY=py"
+)
+if not exist "%PY%" if not "%PY%"=="py" (
   echo.
-  echo [!] Setup is not done yet. Please run the setup batch first ^(shokai-junbi^).
+  echo [!] Runtime not found. Please run the setup batch first.
   echo.
   pause
   exit /b 1
 )
 
 rem Start Ollama if installed (harmless if it is already running)
-where ollama >nul 2>nul && start /b "" ollama serve >nul 2>nul
+set "OEXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+if exist "%OEXE%" ( start /b "" "%OEXE%" serve >nul 2>nul ) else ( where ollama >nul 2>nul && start /b "" ollama serve >nul 2>nul )
 
 echo Reading PDFs in 01_input ... please wait.
 echo ------------------------------------------------------------
