@@ -282,6 +282,77 @@ def _pick_output_folder(mapping):
     return ""
 
 
+class WordForm:
+    """様式(提供計画)が Word の場合の読取。表を「見出し→値」で引けるようにする。
+       Excel様式が無い時のフォールバック（1-2提供計画が.docxで届くケース）。"""
+
+    def __init__(self, path):
+        self.rows = []                                     # 各行=セル文字列リスト（結合セルは重複除去）
+        try:
+            from docx import Document
+            doc = Document(path)
+        except Exception:
+            return
+        for t in doc.tables:
+            for r in t.rows:
+                cells, prev = [], None
+                for c in r.cells:
+                    txt = TX.clean(c.text)
+                    if txt == prev:
+                        continue                           # 結合セルの重複を畳む
+                    cells.append(txt)
+                    prev = txt
+                if any(cells):
+                    self.rows.append(cells)
+
+    @staticmethod
+    def _match(cell, heading, exact):
+        if not cell or not heading:
+            return False
+        if exact:
+            return cell == heading
+        return (heading in cell) or (len(cell) >= 4 and cell in heading)
+
+    def value(self, heading, exact=False, joiner="\n\n"):
+        """見出しセルの“後ろ”にある、見出しと違う非空セルを値として返す。"""
+        if not heading:
+            return ""
+        for cells in self.rows:
+            for j, c in enumerate(cells):
+                if self._match(c, heading, exact):
+                    for v in cells[j + 1:]:
+                        if v and v != c and not self._match(v, heading, True):
+                            return v
+        return ""
+
+    def marked_label(self, options, marked="■"):
+        """options=[[ラベル, …], …]。行内で「marked＋ラベル」を含むものを選択とみなす。"""
+        for cells in self.rows:
+            joined = " ".join(cells)
+            for opt in options:
+                lab = opt[0] if isinstance(opt, (list, tuple)) else str(opt)
+                if lab and (marked + lab in joined.replace(" ", "")
+                            or (marked in joined and lab in joined)):
+                    return lab
+        return ""
+
+    def __bool__(self):
+        return len(self.rows) > 0
+
+
+def _load_word_form(folder):
+    """フォルダ内の様式Word（提供計画/様式 を含む .docx）を WordForm 化。無ければ None。"""
+    if not folder:
+        return None
+    cands = [f for f in glob.glob(os.path.join(folder, "*.docx"))
+             if not os.path.basename(f).startswith("~$")
+             and ("提供計画" in os.path.basename(f) or "様式" in os.path.basename(f))]
+    if not cands:
+        return None
+    wf = WordForm(sorted(cands)[0])
+    return wf if wf else None
+
+
 def load_output_ctx(mapping):
     """参照元フォルダ（_pick_output_folder）を探し、様式xlsxシート ws とフォルダ folder を返す。
        Webの参照元＝アウトプット。無ければ (None, '')。"""
@@ -475,14 +546,16 @@ def _read_by_heading(ws, heading, col="L", max_span=40, skip=0, occ=1,
     return joiner.join(parts)
 
 
-def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
+def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None):
     """フィールドの入力値を決める。★出力(アウトプット)を最優先：
        cell/cells=様式xlsxのセル（単一/範囲/複数） / docx=出力Wordの見出しセクション。
-       無ければヒアリング(source)。web専用type: pref/addr_body/today。cell_tf: pref/addr_body/zip。"""
+       out_word=様式がWordの時のフォールバック。無ければヒアリング(source)。"""
     # ⓪ choice_from: Excelの■/□マーカーから選択肢を決める（補償の有無 有/無 等）
-    #    書式: "choice_from": { "options": [["有","L148"],["無","R148"]], "marked": "■" }
-    #    → 各[ラベル,セル]を見て、セル値に marked(既定■) を含む最初のラベルを返す。
     cf = fld.get("choice_from")
+    if cf and out_ws is None and out_word:                 # 様式がWord → マーカー選択をWordから
+        lab = out_word.marked_label(cf.get("options", []), cf.get("marked", "■"))
+        if lab:
+            return lab
     if cf and out_ws is not None:
         marked = cf.get("marked", "■")
         # heading指定なら見出しで行を特定し、options の第2要素を「列文字」として扱う
@@ -545,6 +618,32 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder=""):
             y, m, d = int(mt.group(1)), int(mt.group(2)), int(mt.group(3))
             return {"date_year": str(y), "date_month": "%02d" % m,
                     "date_day": str(d)}[rowspec["tf"]]
+        if v:
+            return v
+
+    # ①-A' 様式がWordの場合の見出し読み（Excelが無い時のフォールバック）
+    if isinstance(rowspec, dict) and out_ws is None and out_word:
+        v = out_word.value(rowspec.get("heading", ""),
+                           bool(rowspec.get("exact", False)),
+                           rowspec.get("joiner", "\n\n"))
+        tf = rowspec.get("tf")
+        if tf in ("date_year", "date_month", "date_day"):
+            s = v or ""
+            m2 = _re.search(r"令和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})", s)
+            mt = (_re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", s)
+                  or _re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", s))
+            if m2:
+                y, m, d = 2018 + int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
+            elif mt:
+                y, m, d = int(mt.group(1)), int(mt.group(2)), int(mt.group(3))
+            else:
+                return ""
+            return {"date_year": str(y), "date_month": "%02d" % m, "date_day": str(d)}[tf]
+        if tf in ("pref", "addr_body"):
+            pref, body = _pref_split(v)
+            return pref if tf == "pref" else body
+        if tf == "zip":
+            return (v or "").lstrip("〒 　").strip()
         if v:
             return v
 
@@ -630,6 +729,7 @@ def fill_one_page(page, mapping, hearing, kits, filled_keys, out_ws=None, out_fo
     """現在表示中のページの、まだ埋めていないフィールドを入力する。"""
     done = 0
     logs = []
+    out_word = _load_word_form(out_folder) if out_ws is None else None
     for idx, fld in enumerate(mapping.get("fields", [])):
         if not isinstance(fld, dict):
             continue                              # 説明用の文字列などはスキップ
@@ -638,7 +738,7 @@ def fill_one_page(page, mapping, hearing, kits, filled_keys, out_ws=None, out_fo
             continue
         if not (fld.get("selector") or fld.get("label")):
             continue
-        val = _resolve_value(fld, hearing, kits, out_ws, out_folder)
+        val = _resolve_value(fld, hearing, kits, out_ws, out_folder, out_word)
         desc = fld.get("desc", fld.get("selector") or fld.get("label"))
         ftype = (fld.get("type") or "text").lower()
         try:
@@ -796,13 +896,14 @@ def _apply_overflow(item, mapping):
 
 def build_plan(mapping, hearing, kits, out_ws, out_folder):
     """全マッピング欄の入力値を先に解決し、状態付きの作業リストを作る。"""
+    out_word = _load_word_form(out_folder) if out_ws is None else None   # 様式がWordならフォールバック
     plan = []
     for idx, fld in enumerate(mapping.get("fields", [])):
         if not isinstance(fld, dict):
             continue                                   # 説明用の文字列はスキップ
         if not (fld.get("selector") or fld.get("label")):
             continue
-        val = _resolve_value(fld, hearing, kits, out_ws, out_folder)
+        val = _resolve_value(fld, hearing, kits, out_ws, out_folder, out_word)
         was_token = bool(val) and "{{" in val and "}}" in val
         if was_token:
             val = ""                                   # 未解決トークンはフォームに書かない（保険）
@@ -1387,14 +1488,15 @@ def _ensure_pdf(src, pdf_dir, gray=True):
 
 def _leading_slots(basename):
     """ファイル名の頭の番号 → 添付スロット番号のリスト（案件名・様式差に強い汎用ルール）。
-       ・様式(提供計画)/医療機関一覧 は添付しない（参照元・対象外）
+       ・医療機関一覧 は添付しない（対象外）
        ・アセント文書 → 4 と 5
        ・「04-05」「04.05」→ 4 と 5、「17.」「02」→ その番号
-       ・1（様式/意見書）や範囲外は除外（2〜17のみ）"""
+       ・「1-2提供計画」等は頭の数字=1 → スロット1（PDF化リストに含める）
+       ・範囲外(1〜17以外)は除外"""
     b = basename or ""
     if b.startswith("~$"):
         return []
-    if ("提供計画" in b) or ("様式" in b) or ("医療機関一覧" in b):
+    if "医療機関一覧" in b:
         return []
     if "アセント" in b:
         return ["4", "5"]
@@ -1404,10 +1506,10 @@ def _leading_slots(basename):
     n1 = int(m.group(1))
     n2 = int(m.group(2)) if m.group(2) else None
     # 「4-5」「4.5」「04-05」だけを“範囲(4と5)”とする。
-    # 「16-2」「16-13」等は 16 がスロットで -N は枝番なので、先頭番号だけを使う。
+    # 「16-2」「1-2」等は先頭番号がスロット（-N は枝番）。
     if n1 == 4 and n2 == 5:
         return ["4", "5"]
-    return [str(n1)] if 2 <= n1 <= 17 else []
+    return [str(n1)] if 1 <= n1 <= 17 else []
 
 
 def _resolve_attachments(mapping, out_folder, only=""):
@@ -1472,16 +1574,32 @@ def _upload_file_once(page, fi, path):
     except Exception as e:
         return False, "セット失敗 %r" % e
     page.wait_for_timeout(800)
-    # このスロットの file 入力の“直後”に現れる最初のアップロードボタンだけを対象にする
-    btn = fi.first.locator("xpath=following::*[self::button or self::a]"
-                           "[contains(normalize-space(.),'アップロード')][1]")
-    if btn.count() == 0:
+    # このスロットの file 入力の“後ろ”に並ぶアップロード要素のうち【可視】の最初の1つを押す。
+    #   ※ サイトには非表示のアップロード要素があり、[1]で掴むと "element is not visible" で
+    #     scroll がタイムアウトして全滅する。可視だけを対象にし、クリックはJSフォールバック付き。
+    btns = fi.first.locator("xpath=following::*[self::button or self::a or self::input]"
+                            "[contains(normalize-space(.),'アップロード') or "
+                            "contains(@value,'アップロード')]")
+    target = None
+    for i in range(min(btns.count(), 12)):
+        b = btns.nth(i)
+        try:
+            if b.is_visible():
+                target = b
+                break
+        except Exception:
+            continue
+    if target is None and btns.count() > 0:
+        target = btns.first                                # 可視が無ければ先頭でJSクリックを試す
+    if target is None:
         return False, "アップロードボタンが見つからず（手動で押してください）"
     try:
-        btn.first.scroll_into_view_if_needed()
-        btn.first.click()
-    except Exception as e:
-        return False, "アップロード押下失敗 %r" % e
+        target.click(timeout=6000)                         # click が自動でスクロール＆可視待ち
+    except Exception:
+        try:
+            target.evaluate("el => el.click()")            # 可視待ちで失敗→JSで直接クリック
+        except Exception as e:
+            return False, "アップロード押下失敗 %r" % e
     # 反映を待って確認（このスロットに「削除」が1つ増えれば載った）
     for _ in range(16):                       # 最大 ~8秒
         page.wait_for_timeout(500)

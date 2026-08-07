@@ -98,14 +98,31 @@ def _grayscale_gs(gs, src_pdf, dst_pdf):
                    check=True)
 
 
+def _darken_lut(factor=0.5, white_pt=242):
+    """白黒化で“薄い色文字”が読めるよう暗くするLUT。
+       白背景(>=white_pt)は白のまま、それ以外は factor 倍に暗くする（numpy/PIL不要）。"""
+    lut = bytearray(256)
+    for i in range(256):
+        lut[i] = 255 if i >= white_pt else max(0, min(255, int(i * factor)))
+    return bytes(lut)
+
+
 def _grayscale_pymupdf(src_pdf, dst_pdf, dpi=200):
+    """PyMuPDFでラスタ白黒化。色文字/ハイライトが薄くならないようコントラストを強化。"""
     import fitz
+    lut = _darken_lut()
     doc = fitz.open(src_pdf)
     out = fitz.open()
     try:
         for page in doc:
             pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72.0, dpi / 72.0),
                                   colorspace=fitz.csGRAY)
+            try:
+                data = bytes(pix.samples)              # 1バイト/画素(グレー)
+                data = data.translate(lut)             # C速度で暗く（薄い色文字を黒寄せ）
+                pix = fitz.Pixmap(fitz.csGRAY, pix.width, pix.height, data, 0)
+            except Exception:
+                pass                                   # 失敗時は素の白黒で続行
             np = out.new_page(width=page.rect.width, height=page.rect.height)
             np.insert_image(np.rect, pixmap=pix)
         out.save(dst_pdf, deflate=True, garbage=3)
