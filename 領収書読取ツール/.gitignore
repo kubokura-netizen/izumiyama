@@ -1,0 +1,15 @@
+# 重量物・環境依存物はGit管理しない（配布はポータブル同梱／初回準備で用意）
+# ※ .gitignore は行末コメント非対応。コメントは必ず独立行に書く。
+.venv/
+_ocr/
+__pycache__/
+*.pyc
+~$*
+
+# 入出力・作業データ（患者/経費情報を含みうるため除外。フォルダは.gitkeepで維持）
+01_input/*
+!01_input/.gitkeep
+02_output/*
+!02_output/.gitkeep
+03_work/*
+!03_work/.gitkeep
