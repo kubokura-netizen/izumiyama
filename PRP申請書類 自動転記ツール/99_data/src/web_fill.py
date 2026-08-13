@@ -283,11 +283,14 @@ def _pick_output_folder(mapping):
 
 
 class WordForm:
-    """様式(提供計画)が Word の場合の読取。表を「見出し→値」で引けるようにする。
-       Excel様式が無い時のフォールバック（1-2提供計画が.docxで届くケース）。"""
+    """様式(提供計画)が Word の場合の読取。表と冒頭ヘッダ段落を「見出し→値」で引く。
+       Excel様式が無い時のフォールバック（1-2提供計画が.docxで届くケース）。
+       ・rows   … 表（結合セルの重複は畳む）
+       ・para_kv… 「名 称␉値」「管理者　値」等の“ラベル<区切り>値”段落（医療機関ヘッダ等）"""
 
     def __init__(self, path):
-        self.rows = []                                     # 各行=セル文字列リスト（結合セルは重複除去）
+        self.rows = []
+        self.para_kv = []
         try:
             from docx import Document
             doc = Document(path)
@@ -304,40 +307,89 @@ class WordForm:
                     prev = txt
                 if any(cells):
                     self.rows.append(cells)
+        for p in doc.paragraphs:
+            t = (p.text or "").strip()
+            if not t:
+                continue
+            # ラベルと値の区切り＝タブ / 全角スペース / 半角スペース2つ以上
+            parts = _re.split(r'[\t　]+|[ ]{2,}', t, maxsplit=1)
+            if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                self.para_kv.append((self._norm(parts[0]), parts[1].strip()))
 
     @staticmethod
-    def _match(cell, heading, exact):
+    def _norm(s):
+        """比較用に空白（半角/全角/タブ）を除去。『名　称』『名 称』『名称』を同一視。"""
+        return _re.sub(r'[\s　]', '', s or '')
+
+    def _match(self, cell, heading, exact):
         if not cell or not heading:
             return False
+        c, h = self._norm(cell), self._norm(heading)
+        if not c or not h:
+            return False
         if exact:
-            return cell == heading
-        return (heading in cell) or (len(cell) >= 4 and cell in heading)
+            return c == h
+        return (h in c) or (len(c) >= 4 and c in h)
 
-    def value(self, heading, exact=False, joiner="\n\n"):
-        """見出しセルの“後ろ”にある、見出しと違う非空セルを値として返す。"""
+    def value(self, heading, exact=False, joiner="\n\n", occ=1):
+        """表から見出しの“後ろ”の非空セルを返す。occで同名見出しのN番目を選ぶ。
+           表に無ければ冒頭ヘッダ段落（名称/住所/管理者 等）からも探す。"""
         if not heading:
             return ""
+        n = 0
         for cells in self.rows:
             for j, c in enumerate(cells):
                 if self._match(c, heading, exact):
                     for v in cells[j + 1:]:
-                        if v and v != c and not self._match(v, heading, True):
-                            return v
+                        if v and self._norm(v) != self._norm(c) \
+                                and not self._match(v, heading, True):
+                            n += 1
+                            if n >= max(1, occ):
+                                return v
+                            break                          # この見出し行の値は1つ→次の出現へ
+        return self.para_value(heading)
+
+    def para_value(self, heading):
+        """冒頭ヘッダ段落（『名 称␉BiOLiS』『管理者　佐々木』等）から値を返す。"""
+        h = self._norm(heading)
+        if not h:
+            return ""
+        for lab, val in self.para_kv:
+            if lab == h or (len(lab) >= 2 and (h in lab or lab in h)):
+                return val
         return ""
 
-    def marked_label(self, options, marked="■"):
-        """options=[[ラベル, …], …]。行内で「marked＋ラベル」を含むものを選択とみなす。"""
-        for cells in self.rows:
-            joined = " ".join(cells)
-            for opt in options:
+    def marked_label(self, options, marked="■", heading=""):
+        """options=[[ラベル,…],…]。見出しで行を絞り、選択されたラベルを返す。
+           この様式の選択規約は2通り: ①「■ラベル」= 選択  ②「□無しのラベル」= 選択
+           （未選択は「□ ラベル」）。②のため “□/■除去した中身がラベルと一致し、
+           かつ□が無い（または■がある）” セルを選択とみなす。"""
+        rows = self.rows
+        if heading:                                        # 見出しが“セルに含まれる”行だけに厳格化
+            hn = self._norm(heading)                       # （短いラベルの部分一致で別行を拾わないため）
+            hit = [cells for cells in self.rows
+                   if any(hn and hn in self._norm(c) for c in cells)]
+            if hit:
+                rows = hit
+        boxes = "□☐▢"                                      # 未選択チェックボックス記号
+        for cells in rows:
+            for opt in options:                            # options順（該当⊂非該当の誤爆を避けるため厳密一致）
                 lab = opt[0] if isinstance(opt, (list, tuple)) else str(opt)
-                if lab and (marked + lab in joined.replace(" ", "")
-                            or (marked in joined and lab in joined)):
-                    return lab
+                if not lab:
+                    continue
+                ln = self._norm(lab)
+                for c in cells:
+                    core = _re.sub(r'[□☐▢■◼\s　]', '', c)   # 記号と空白を除いた中身
+                    if core != ln:
+                        continue                           # ラベルそのもののセルだけ対象（部分一致は不可）
+                    has_box = any(b in c for b in boxes)
+                    has_fill = ("■" in c) or ("◼" in c) or (marked and marked in c and marked not in boxes)
+                    if has_fill or not has_box:            # ■付き or □無し → 選択
+                        return lab
         return ""
 
     def __bool__(self):
-        return len(self.rows) > 0
+        return len(self.rows) > 0 or len(self.para_kv) > 0
 
 
 def _load_word_form(folder):
@@ -553,7 +605,8 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None
     # ⓪ choice_from: Excelの■/□マーカーから選択肢を決める（補償の有無 有/無 等）
     cf = fld.get("choice_from")
     if cf and out_ws is None and out_word:                 # 様式がWord → マーカー選択をWordから
-        lab = out_word.marked_label(cf.get("options", []), cf.get("marked", "■"))
+        lab = out_word.marked_label(cf.get("options", []), cf.get("marked", "■"),
+                                    cf.get("word_heading", cf.get("heading", "")))
         if lab:
             return lab
     if cf and out_ws is not None:
@@ -622,10 +675,21 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None
             return v
 
     # ①-A' 様式がWordの場合の見出し読み（Excelが無い時のフォールバック）
+    #   フィールドに "word":{"heading":..,"where":"para|table|auto","occ":N} があれば
+    #   それをWord用の“転記ポイント定義（変数）”として優先する。無ければ通常headingを流用。
     if isinstance(rowspec, dict) and out_ws is None and out_word:
-        v = out_word.value(rowspec.get("heading", ""),
-                           bool(rowspec.get("exact", False)),
-                           rowspec.get("joiner", "\n\n"))
+        wspec = rowspec.get("word") or {}
+        whead = wspec.get("heading", rowspec.get("heading", ""))
+        wwhere = wspec.get("where", "auto")
+        wocc = int(wspec.get("occ", rowspec.get("occ", 1)))
+        if wwhere == "para":                               # 冒頭ヘッダ段落のみ（名称/住所/管理者 等）
+            v = out_word.para_value(whead)
+        elif wwhere == "table":                            # 表のみ
+            v = out_word.value(whead, bool(rowspec.get("exact", False)),
+                               rowspec.get("joiner", "\n\n"), wocc)
+        else:                                              # auto=表→段落
+            v = out_word.value(whead, bool(rowspec.get("exact", False)),
+                               rowspec.get("joiner", "\n\n"), wocc)
         tf = rowspec.get("tf")
         if tf in ("date_year", "date_month", "date_day"):
             s = v or ""
@@ -686,6 +750,8 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None
         if t == "today" and src.get("fmt") in ("year", "month", "day"):
             d = datetime.datetime.now()
             return {"year": str(d.year), "month": "%02d" % d.month, "day": str(d.day)}[src.get("fmt")]
+        if t == "fixed":                                   # 固定値（参照元不要）。アウトプットのみ運用でも有効に
+            return TX.clean(src.get("value", fld.get("value", "")))
         if hearing is None:
             # ヒアリング未読込（作成済み書類のみで転記する運用）→ 既定値/空でスキップ
             return TX.clean(fld.get("value", ""))

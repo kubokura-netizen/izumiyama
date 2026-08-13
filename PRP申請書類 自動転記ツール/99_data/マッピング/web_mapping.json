@@ -73,7 +73,11 @@
           "L"
         ],
         "offset": -1,
-        "span": 1
+        "span": 1,
+        "word": {
+          "heading": "名称",
+          "where": "para"
+        }
       }
     },
     {
@@ -91,7 +95,11 @@
         ],
         "offset": -1,
         "span": 1,
-        "tf": "pref"
+        "tf": "pref",
+        "word": {
+          "heading": "住所",
+          "where": "para"
+        }
       }
     },
     {
@@ -109,7 +117,11 @@
         ],
         "offset": -1,
         "span": 1,
-        "tf": "addr_body"
+        "tf": "addr_body",
+        "word": {
+          "heading": "住所",
+          "where": "para"
+        }
       }
     },
     {
@@ -128,7 +140,11 @@
           "L"
         ],
         "offset": -1,
-        "span": 1
+        "span": 1,
+        "word": {
+          "heading": "管理者",
+          "where": "para"
+        }
       }
     },
     {
@@ -881,7 +897,10 @@
       "type": "text",
       "row": {
         "heading": "苦情及び問合せへの対応に関する体制の整備状況",
-        "col": "L"
+        "col": "L",
+        "word": {
+          "heading": "苦情及び問"
+        }
       }
     },
     {
@@ -952,7 +971,10 @@
       "type": "text",
       "row": {
         "heading": "提供する再生医療等の妥当性についての検討内容",
-        "col": "L"
+        "col": "L",
+        "word": {
+          "heading": "妥当性についての検討"
+        }
       }
     },
     {
@@ -1042,7 +1064,10 @@
       },
       "row": {
         "heading": "疾病等の発生時における報告体制の内容",
-        "col": "L"
+        "col": "L",
+        "word": {
+          "heading": "疾病等の発生における報告体制"
+        }
       }
     },
     {
