@@ -32,6 +32,36 @@ function Info($m) { Write-Host $m -ForegroundColor Cyan }
 function Ok($m)   { Write-Host $m -ForegroundColor Green }
 function Warn($m) { Write-Host $m -ForegroundColor Yellow }
 
+# セットアップの詳細ログ（失敗原因を後から確認できるように、全出力を残す）
+$script:LogFile = $null
+function Log($m) {
+    if (-not $script:LogFile) { return }
+    try { Add-Content -LiteralPath $script:LogFile -Value ([string]$m) -Encoding UTF8 } catch {}
+}
+
+# ネイティブ実行（pip/playwright）の安全な呼び出し。
+#   ・全出力（stdout/stderr）をログに残す
+#   ・pip等がstderrに“注意書き”を出しただけで失敗扱いになるPS5.1の罠を回避
+#     （$ErrorActionPreferenceを一時的にContinueにして 2>&1 を安全に扱う）
+#   ・成否は必ず終了コード($LASTEXITCODE)で判定する
+function Invoke-Step($exe, $argList, $what) {
+    Write-Host ("  " + $what + " ...")
+    Log ''
+    Log ('### ' + $what)
+    Log ('# ' + $exe + ' ' + ($argList -join ' '))
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $exe @argList 2>&1 | ForEach-Object { Log $_ }
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw ($what + ' に失敗しました (終了コード=' + $LASTEXITCODE + ')')
+    }
+}
+
 $work = $null
 try {
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -41,6 +71,15 @@ try {
     # .bat からは -TargetDir で明示的に渡される。単体実行時は現在地を使う。
     if (-not $TargetDir) { $TargetDir = (Get-Location).Path }
     $isUpdate = Test-Path (Join-Path $TargetDir '98_dashboard\app.py')
+
+    # 詳細ログの出力先（TargetDir直下・保持対象。失敗時にこの場所を案内する）
+    $script:LogFile = Join-Path $TargetDir '_setup_last.log'
+    try {
+        New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+        Set-Content -LiteralPath $script:LogFile -Value ('PRP setup log  ' +
+            (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) -Encoding UTF8
+    }
+    catch {}
 
     Write-Host ''
     Info '============================================================'
@@ -112,13 +151,17 @@ try {
 
     # --- 4. Web転記/PDF化の部品 + ブラウザ ------------------------------
     Info '[4/4] Web転記・PDF化の部品を導入しています...'
-    & $pyExe -m pip install --no-warn-script-location playwright pywin32 PyMuPDF 2>&1 | Out-Null
+    # pip: 対話停止・バージョン通知抑止・再試行/タイムアウトで、途切れやすい回線でも安定させる
+    $pipArgs = @('-m', 'pip', 'install', '--no-warn-script-location',
+                 '--disable-pip-version-check', '--no-input',
+                 '--retries', '3', '--timeout', '60',
+                 'playwright', 'pywin32', 'PyMuPDF')
+    Invoke-Step $pyExe $pipArgs 'PyPIから部品(playwright/pywin32/PyMuPDF)を取得'
     if ($SkipBrowser) {
         Warn '  ブラウザ(Chromium)の導入はスキップしました（-SkipBrowser）。'
     }
     else {
-        Write-Host '  ブラウザ(Chromium)を導入しています（初回は数分）...'
-        & $pyExe -m playwright install chromium 2>&1 | Out-Null
+        Invoke-Step $pyExe @('-m', 'playwright', 'install', 'chromium') 'ブラウザ(Chromium)を取得（初回は数分）'
     }
 
     # デスクトップに起動ショートカットを作成（見つけやすく）
@@ -162,9 +205,27 @@ try {
 catch {
     Write-Host ''
     Warn ('失敗しました: ' + $_.Exception.Message)
-    Write-Host '  ・インターネット接続をご確認のうえ、もう一度お試しください。'
-    Write-Host '  ・会社等でダウンロード制限がある場合は解除が必要なことがあります。'
-    Write-Host '  ・解決しない場合は、この画面を開発担当（大野／窪倉）へお知らせください。'
+    Log ('!!! FAILED: ' + $_.Exception.Message)
+    Log ($_.ScriptStackTrace)
+    # 失敗直前の実出力（pip/playwrightの本当のエラー）を画面にも出す
+    if ($script:LogFile -and (Test-Path $script:LogFile)) {
+        Write-Host ''
+        Write-Host '  ── エラーの詳細（ログ末尾） ─────────────────' -ForegroundColor DarkGray
+        try {
+            Get-Content -LiteralPath $script:LogFile -Tail 15 -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host ('  ' + $_) -ForegroundColor DarkGray }
+        }
+        catch {}
+        Write-Host '  ─────────────────────────────────────────' -ForegroundColor DarkGray
+        Write-Host ('  詳しいログ: ' + $script:LogFile) -ForegroundColor Yellow
+        Write-Host '  ↑このファイルを開発担当（大野／窪倉）へ送っていただくと原因が特定できます。'
+    }
+    Write-Host ''
+    Write-Host '  よくある原因:'
+    Write-Host '  ・会社のネットワーク制限/プロキシで PyPI・ブラウザ配布元がブロックされている'
+    Write-Host '  ・保存場所が Google ドライブ(マイドライブ) 等の同期フォルダ → 導入中にファイルがロックされる'
+    Write-Host '    （その場合は C:\ の通常フォルダに置いて再実行すると解決することがあります）'
+    Write-Host '  ・解決しない場合は、この画面と上記ログを開発担当（大野／窪倉）へお知らせください。'
     Write-Host ''
     if ($work) { Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue }
 }
