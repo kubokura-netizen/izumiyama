@@ -48,6 +48,8 @@ if ($Tool -eq 'receipt') {
                          '_runtime', '_ocr', '.venv', '.git', '.claude', '__pycache__')
         Launcher     = '読取実行.bat'
         Shortcut     = '領収書読取ツールを起動'
+        # クライアントの目に触れないよう隠す開発者用（削除はしない）
+        Hide         = @('初回準備.bat', '98_dist')
     }
 }
 else {
@@ -63,6 +65,11 @@ else {
                          '_runtime', '.venv_dashboard', '_web_profile', '.git', '.claude', '__pycache__')
         Launcher     = 'ダッシュボード起動.bat'
         Shortcut     = 'PRPツールを起動'
+        # 開発者用は隠す。ただし 99_data\テンプレート（クライアント編集）は残す。
+        # 00_マニュアル/01_input/02_output/03_logs/各.bat も表示のまま。
+        Hide         = @('98_dashboard', '99_data\src', '99_data\マッピング',
+                         '99_data\パッチノート', '99_data\参考元【原本・設計書】',
+                         '99_data\設計書', '99_data\_web_profile')
     }
 }
 
@@ -230,13 +237,10 @@ try {
         }
     }
 
-    # クライアントの見た目をすっきりさせる：開発者専用ファイルを隠し属性にする。
-    #   初回準備.bat … Python導入済みPC用（bootstrap版では _runtime を使うため不要）
-    #   98_dist       … 配布物作成スクリプト（導入後は使わない）
-    if ($Tool -eq 'receipt') {
-        foreach ($h in @('初回準備.bat', '98_dist')) {
-            Hide-Item (Join-Path $TargetDir $h)
-        }
+    # クライアントの見た目をすっきりさせる：開発者専用ファイル/フォルダを隠し属性に
+    # （削除はしない。$cfg.Hide で定義。テンプレート等の編集資材は対象外）。
+    foreach ($h in $cfg.Hide) {
+        Hide-Item (Join-Path $TargetDir $h)
     }
 
     # デスクトップに起動ショートカットを作成（見つけやすく）
