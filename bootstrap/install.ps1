@@ -100,6 +100,15 @@ function Invoke-Step($exe, $argList, $what) {
     }
 }
 
+# 開発者専用ファイルをクライアントの目に触れないよう「隠し属性」にする（削除はしない）。
+function Hide-Item($path) {
+    try {
+        $it = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        $it.Attributes = $it.Attributes -bor [System.IO.FileAttributes]::Hidden
+    }
+    catch {}
+}
+
 $work = $null
 try {
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -218,6 +227,15 @@ try {
         }
         else {
             Invoke-Step $pyExe @('-m', 'playwright', 'install', 'chromium') 'ブラウザ(Chromium)を取得（初回は数分）'
+        }
+    }
+
+    # クライアントの見た目をすっきりさせる：開発者専用ファイルを隠し属性にする。
+    #   初回準備.bat … Python導入済みPC用（bootstrap版では _runtime を使うため不要）
+    #   98_dist       … 配布物作成スクリプト（導入後は使わない）
+    if ($Tool -eq 'receipt') {
+        foreach ($h in @('初回準備.bat', '98_dist')) {
+            Hide-Item (Join-Path $TargetDir $h)
         }
     }
 
