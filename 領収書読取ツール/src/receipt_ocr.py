@@ -336,9 +336,9 @@ IMG_COL = 15                                          # O列に画像
 WRAP_COLS = {7, 16}                                   # 内容 / OCR抜粋 は折り返し
 
 
-def _open_out():
-    if os.path.exists(OUT_XLSX):
-        return openpyxl.load_workbook(OUT_XLSX)
+def _open_out(out_xlsx):
+    if os.path.exists(out_xlsx):
+        return openpyxl.load_workbook(out_xlsx)
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     return wb
@@ -376,8 +376,8 @@ def _ensure_sheet(wb):
     return ws
 
 
-def append_rows(entries):
-    wb = _open_out()
+def append_rows(entries, out_xlsx):
+    wb = _open_out(out_xlsx)
     ws = _ensure_sheet(wb)
     start = ws.max_row + 1
     batch = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -417,7 +417,7 @@ def append_rows(entries):
                 ws.add_image(im, "%s%d" % (openpyxl.utils.get_column_letter(IMG_COL), r))
             except Exception:
                 pass
-    wb.save(OUT_XLSX)
+    wb.save(out_xlsx)
     return start, ws.max_row, batch
 
 
@@ -460,6 +460,38 @@ def process_pdf(pdf_path, report):
     return entries
 
 
+def _safe_name(s):
+    """フォルダ名をファイル名に使えるよう禁止文字を置換。"""
+    return re.sub(r'[\\/:*?"<>|]', '_', (s or "")).strip() or "folder"
+
+
+def run_group(label, pdfs, out_xlsx, report_name):
+    """1グループ（直下PDF or 1フォルダ）を処理して、そのグループ専用のExcel/レポートに出力。"""
+    report = ["=== 取込レポート (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")]
+    if label:
+        report.append("対象フォルダ: %s" % label)
+    all_entries = []
+    for p in pdfs:
+        report.append("▼ %s" % os.path.basename(p))
+        all_entries += process_pdf(p, report)
+    s, e, batch = append_rows(all_entries, out_xlsx)
+    n_flag = sum(1 for x in all_entries if x["flag"])
+    report.append("")
+    report.append("→ 今回 %d件 追加（%s）。うち ⚠要手入力=%d件。" % (len(all_entries), batch, n_flag))
+    report.append("→ 出力: %s（シート「%s」・黄=新規/赤=要手入力）" % (out_xlsx, SHEET))
+    if n_flag:
+        report.append("")
+        report.append("⚠ 手書き/低信頼を検知した項目（内容をご確認のうえ手入力してください）:")
+        for x in all_entries:
+            if x["flag"]:
+                report.append("   ・%s No.%s（%s）" % (x["pdf"], x["no"], x["reason"]))
+    out = "\n".join(report)
+    print(out)
+    with io.open(os.path.join(DIR_OUT, report_name), "w", encoding="utf-8") as f:
+        f.write(out)
+    return len(all_entries), n_flag
+
+
 def main():
     ok, msg = check_ready()
     print("=== 領収書読取ツール ===")
@@ -469,30 +501,35 @@ def main():
     _ensure_llm()                                      # Ollamaの起動完了を待ってから判定
     print("  抽出エンジン: %s" % ("ローカルLLM(%s)＋OCR" % L.DEFAULT_MODEL if LLM_ON
                                    else "OCR/ルールのみ（Ollama未起動 → 精度は控えめ）"))
-    pdfs = sorted(glob.glob(os.path.join(DIR_IN, "*.pdf")))
-    if not pdfs:
-        print("01_input にPDFを入れてください。")
+    # 入力の受け付け方:
+    #   ・01_input 直下のPDF        → 1つのExcel（経費入力表_取込.xlsx）にまとめる
+    #   ・01_input 直下のサブフォルダ → フォルダごとに別Excel（経費入力表_取込_<フォルダ名>.xlsx）
+    top_pdfs = sorted(glob.glob(os.path.join(DIR_IN, "*.pdf")))
+    subdirs = sorted(d for d in glob.glob(os.path.join(DIR_IN, "*")) if os.path.isdir(d))
+    groups = []                                        # (表示名, pdf群, 出力xlsx, レポート名)
+    if top_pdfs:
+        groups.append(("", top_pdfs, OUT_XLSX, "取込レポート.txt"))
+    for d in subdirs:
+        name = os.path.basename(d)
+        pdfs = sorted(glob.glob(os.path.join(d, "**", "*.pdf"), recursive=True))
+        if not pdfs:
+            continue
+        safe = _safe_name(name)
+        groups.append((name, pdfs,
+                       os.path.join(DIR_OUT, "経費入力表_取込_%s.xlsx" % safe),
+                       "取込レポート_%s.txt" % safe))
+    if not groups:
+        print("01_input にPDF（またはPDF入りのフォルダ）を入れてください。")
         return
-    report = ["=== 取込レポート (%s) ===" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M")]
-    all_entries = []
-    for p in pdfs:
-        report.append("▼ %s" % os.path.basename(p))
-        all_entries += process_pdf(p, report)
-    s, e, batch = append_rows(all_entries)
-    n_flag = sum(1 for x in all_entries if x["flag"])
-    report.append("")
-    report.append("→ 今回 %d件 追加（%s）。うち ⚠要手入力=%d件。" % (len(all_entries), batch, n_flag))
-    report.append("→ 出力: %s（シート「%s」・黄=新規/赤=要手入力）" % (OUT_XLSX, SHEET))
-    if n_flag:
-        report.append("")
-        report.append("⚠ 手書き/低信頼を検知した項目（内容をご確認のうえ手入力してください）:")
-        for x in all_entries:
-            if x["flag"]:
-                report.append("   ・%s No.%s（%s）" % (x["pdf"], x["no"], x["reason"]))
-    out = "\n".join(report)
-    print(out)
-    with io.open(os.path.join(DIR_OUT, "取込レポート.txt"), "w", encoding="utf-8") as f:
-        f.write(out)
+    total = total_flag = 0
+    for label, pdfs, out_xlsx, rep in groups:
+        head = ("フォルダ「%s」" % label) if label else "直下のPDF"
+        print("\n■ %s（%d件）→ %s" % (head, len(pdfs), os.path.basename(out_xlsx)))
+        n, nf = run_group(label, pdfs, out_xlsx, rep)
+        total += n
+        total_flag += nf
+    if len(groups) > 1:
+        print("\n=== 全%dグループ 合計: %d件（うち ⚠要手入力 %d件）===" % (len(groups), total, total_flag))
 
 
 if __name__ == "__main__":
