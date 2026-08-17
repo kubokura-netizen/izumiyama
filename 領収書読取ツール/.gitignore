@@ -7,6 +7,11 @@ __pycache__/
 *.pyc
 ~$*
 
+# 環境依存の設定（フォルダ設定.batで各PCが生成。IN/OUT・マスターパスを含む）
+settings.json
+# マスターのバックアップ（自動生成）
+*.backup_*.xlsx
+
 # 入出力・作業データ（患者/経費情報を含みうるため除外。フォルダは.gitkeepで維持）
 01_input/*
 !01_input/.gitkeep

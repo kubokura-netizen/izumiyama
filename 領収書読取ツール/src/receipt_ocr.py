@@ -26,6 +26,7 @@ import pytesseract
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.drawing.image import Image as XLImage
+import pipeline as P                # 設定・ファイル名生成・年月判定（確定プラン用）
 
 # ---- パス設定 -------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -333,9 +334,11 @@ COPY_HEAD_FILL = PatternFill("solid", fgColor="FCE4D6")  # 貼付対象(A〜J)�
 THIN = Border(*[Side(style="thin", color="BFBFBF")] * 4)
 # 経費入力表の列並びに一致（A〜J）＋補助（K〜P）
 COLS = ["月", "日付", "GWS", "立替", "清算", "相手先", "内容", "収入", "支払", "差引（残額）",
-        "確認", "状態", "元PDF", "No", "画像", "OCR抜粋"]
+        "確認", "状態", "元PDF", "No", "画像", "OCR抜粋",
+        "提案ファイル名", "保存先(年月)", "実行", "元パス"]     # Q〜T＝確定プラン
 COPY_COLS = 10                                        # A〜J が経費入力表と同じ＝貼り付け対象
 IMG_COL = 15                                          # O列に画像
+PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL = 17, 18, 19, 20
 WRAP_COLS = {7, 16}                                   # 内容 / OCR抜粋 は折り返し
 
 
@@ -361,8 +364,10 @@ def _ensure_sheet(wb):
         ws.title = old
     ws = wb.create_sheet(SHEET, 0)
     # 1行目：使い方メモ（貼り付け範囲の案内）
-    ws.cell(1, 1, "▼この行の下がデータ。A〜I列（月〜支払）を選んでコピー→経費入力表の空き行に貼り付け。"
-                  "／K〜P列は確認用（画像・OCR）。赤=要手入力。")
+    ws.cell(1, 1, "▼この行の下がデータ。K〜P=確認用（画像・OCR）。Q〜T=確定プラン"
+                  "（提案ファイル名/保存先(年月)/実行☑/元パス）。内容を確認・修正し、"
+                  "実行する行の『実行』列を☑にして『確定実行.bat』を実行→リネーム・年月フォルダへ移動・"
+                  "経費入力表へ蓄積。赤=要手入力（既定は対象外）。")
     ws.cell(1, 1).font = Font(bold=True, color="C00000")
     # 2行目：見出し
     for j, c in enumerate(COLS, 1):
@@ -372,7 +377,8 @@ def _ensure_sheet(wb):
         cell.border = THIN
         cell.alignment = Alignment(horizontal="center")
     widths = [5, 12, 6, 6, 6, 22, 28, 8, 10, 11,   # A〜J
-              6, 15, 24, 5, 45, 40]                # K〜P（O=画像列を広めに）
+              6, 15, 24, 5, 45, 40,                # K〜P（O=画像列を広めに）
+              36, 12, 6, 48]                       # Q〜T（確定プラン）
     for j, wd in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(j)].width = wd
     ws.freeze_panes = "A3"
@@ -403,6 +409,25 @@ def append_rows(entries, out_xlsx):
         for j in range(11, len(COLS) + 1):
             ws.cell(r, j).fill = helper_fill
         ws.cell(r, 12).fill = FLAG_FILL if e["flag"] else OK_FILL                  # 状態セル
+        # 確定プラン（Q〜T）：提案ファイル名・保存先(年月)・実行チェック・元パス
+        plan_name, ym = "", ""
+        if e.get("pdf_entries", 1) == 1:               # 1PDF=1明細のときだけ原本リネーム対象
+            nm = P.build_filename(f)
+            dt = P.parse_date(f.get("日付"))
+            if nm and dt:
+                plan_name, ym = nm, P.ym_folder(dt)
+        do_mark = "" if e["flag"] else "☑"             # ⚠は既定で対象外（確認後に手で☑）
+        ws.cell(r, PLAN_NAME_COL, plan_name)
+        ws.cell(r, PLAN_YM_COL, ym)
+        ws.cell(r, PLAN_DO_COL, do_mark)
+        ws.cell(r, PLAN_SRC_COL, e.get("src_path", ""))
+        for j in (PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL):
+            ws.cell(r, j).border = THIN
+            ws.cell(r, j).fill = helper_fill
+            ws.cell(r, j).alignment = Alignment(vertical="top",
+                                                wrap_text=(j == PLAN_NAME_COL))
+        ws.cell(r, PLAN_DO_COL).alignment = Alignment(horizontal="center", vertical="top")
+
         # 切り出し画像（O列）：大きめ＋アスペクト比維持で読みやすく。
         # 行高を画像に合わせ、縦長でも下の行にはみ出さない（重なり防止）。
         if e.get("thumb") and os.path.exists(e["thumb"]):
@@ -462,6 +487,10 @@ def process_pdf(pdf_path, report):
                            fields["金額"], fields["内容"][:20]))
             print("      → No.%s %s ｜ %s ｜ %s円" %
                   (no, tag, fields["相手先"][:14], fields["金額"]), flush=True)
+    src = os.path.abspath(pdf_path)
+    for e in entries:                                  # 確定プラン用（原本パス・同PDF内の件数）
+        e["src_path"] = src
+        e["pdf_entries"] = len(entries)
     return entries
 
 
@@ -507,11 +536,12 @@ def main():
     _ensure_llm()                                      # Ollamaの起動完了を待ってから判定
     print("  抽出エンジン: %s" % ("ローカルLLM(%s)＋OCR" % L.DEFAULT_MODEL if LLM_ON
                                    else "OCR/ルールのみ（Ollama未起動 → 精度は控えめ）"))
-    # 入力の受け付け方:
-    #   ・01_input 直下のPDF        → 1つのExcel（経費入力表_取込.xlsx）にまとめる
-    #   ・01_input 直下のサブフォルダ → フォルダごとに別Excel（経費入力表_取込_<フォルダ名>.xlsx）
-    top_pdfs = sorted(glob.glob(os.path.join(DIR_IN, "*.pdf")))
-    subdirs = sorted(d for d in glob.glob(os.path.join(DIR_IN, "*")) if os.path.isdir(d))
+    # 入力の受け付け方（読取フォルダは settings.json の input_dir、既定は 01_input）:
+    #   ・直下のPDF        → 1つのExcel（経費入力表_取込.xlsx）にまとめる
+    #   ・直下のサブフォルダ → フォルダごとに別Excel（経費入力表_取込_<フォルダ名>.xlsx）
+    in_dir = P.load_settings().get("input_dir") or DIR_IN
+    top_pdfs = sorted(glob.glob(os.path.join(in_dir, "*.pdf")))
+    subdirs = sorted(d for d in glob.glob(os.path.join(in_dir, "*")) if os.path.isdir(d))
     groups = []                                        # (表示名, pdf群, 出力xlsx, レポート名)
     if top_pdfs:
         groups.append(("", top_pdfs, OUT_XLSX, "取込レポート.txt"))
