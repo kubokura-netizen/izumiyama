@@ -15,7 +15,10 @@ import glob
 import datetime
 import subprocess
 
-import fitz                      # PyMuPDF
+try:
+    import pymupdf as fitz         # 新名称（「fitzは非推奨」警告を出さない）
+except Exception:
+    import fitz                     # 旧環境フォールバック
 import numpy as np
 import cv2
 from PIL import Image
@@ -457,6 +460,8 @@ def process_pdf(pdf_path, report):
             report.append("  %s No.%s: %s ｜ %s ｜ %s ｜ %s円 ｜ %s" %
                           (base, no, tag, fields["日付"], fields["相手先"][:18],
                            fields["金額"], fields["内容"][:20]))
+            print("      → No.%s %s ｜ %s ｜ %s円" %
+                  (no, tag, fields["相手先"][:14], fields["金額"]), flush=True)
     return entries
 
 
@@ -471,7 +476,8 @@ def run_group(label, pdfs, out_xlsx, report_name):
     if label:
         report.append("対象フォルダ: %s" % label)
     all_entries = []
-    for p in pdfs:
+    for i, p in enumerate(pdfs, 1):
+        print("  [%d/%d] %s を読み取り中..." % (i, len(pdfs), os.path.basename(p)), flush=True)
         report.append("▼ %s" % os.path.basename(p))
         all_entries += process_pdf(p, report)
     s, e, batch = append_rows(all_entries, out_xlsx)
