@@ -369,7 +369,7 @@ def _ensure_sheet(wb):
         cell.border = THIN
         cell.alignment = Alignment(horizontal="center")
     widths = [5, 12, 6, 6, 6, 22, 28, 8, 10, 11,   # A〜J
-              6, 15, 24, 5, 22, 40]                # K〜P
+              6, 15, 24, 5, 45, 40]                # K〜P（O=画像列を広めに）
     for j, wd in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(j)].width = wd
     ws.freeze_panes = "A3"
@@ -400,12 +400,20 @@ def append_rows(entries):
         for j in range(11, len(COLS) + 1):
             ws.cell(r, j).fill = helper_fill
         ws.cell(r, 12).fill = FLAG_FILL if e["flag"] else OK_FILL                  # 状態セル
-        # 切り出し画像（O列）
+        # 切り出し画像（O列）：大きめ＋アスペクト比維持で読みやすく。
+        # 行高を画像に合わせ、縦長でも下の行にはみ出さない（重なり防止）。
         if e.get("thumb") and os.path.exists(e["thumb"]):
             try:
                 im = XLImage(e["thumb"])
-                im.width, im.height = 150, int(150 * e["thumb_ratio"])
-                ws.row_dimensions[r].height = max(90, min(220, im.height * 0.75))
+                ratio = e.get("thumb_ratio") or 1.4          # 高さ/幅
+                box_w, box_h = 300, 460                       # 表示上限(px)
+                w = box_w
+                h = int(w * ratio)
+                if h > box_h:                                # 縦長すぎるものは高さ基準で縮小
+                    h = box_h
+                    w = max(60, int(h / ratio))
+                im.width, im.height = w, h
+                ws.row_dimensions[r].height = h * 0.75 + 8    # 画像高さ(px)→行高(pt)＋余白
                 ws.add_image(im, "%s%d" % (openpyxl.utils.get_column_letter(IMG_COL), r))
             except Exception:
                 pass
