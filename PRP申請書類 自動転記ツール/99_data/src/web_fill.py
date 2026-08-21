@@ -250,22 +250,44 @@ def _folder_is_resolved(folder):
         return True
 
 
+def _has_form(folder):
+    """フォルダ内に“様式/提供計画”（Word/Excel）があるか。参照元判定の要。"""
+    pats = ["01.*.xlsx", "*様式*.xlsx", "*提供計画*.xlsx",
+            "*提供計画*.docx", "*様式*.docx"]
+    for p in pats:
+        for f in glob.glob(os.path.join(folder, p)):
+            if not os.path.basename(f).startswith("~$"):
+                return True
+    return False
+
+
 def _pick_output_folder(mapping):
     """参照元フォルダを決める。優先度:
-       ① --folder=指定 ② 名前が output_folder_contains に一致するフォルダ（新しい順）
-       ③ 名前不問のサブフォルダ（新しい順）。②③とも“テンプレ状態(未生成)”は飛ばし
-       解決済みの最新を優先する。④ 02_output 直下に書類を直接置いた場合はそこ。無ければ ''。"""
+       ① --folder=指定
+       ② 様式/提供計画(Word/Excel)を実際に含むフォルダ（サブ→無ければ直下）★これを最優先
+       ③ 従来: output_folder_contains 一致→解決済みの新しい順→直下。
+       ※ ツール自動生成の PDF変換 フォルダは参照元から除外（提供計画が無く誤検出の元）。"""
     if _FORCE_FOLDER:
         return _FORCE_FOLDER if os.path.isdir(_FORCE_FOLDER) else ""
     outdir = TX.resolve_dir("02_output")
-    subs = [d for d in glob.glob(os.path.join(outdir, "*")) if os.path.isdir(d)]
+    pdf_name = mapping.get("pdf_dir_name", "PDF変換")
+    subs = [d for d in glob.glob(os.path.join(outdir, "*"))
+            if os.path.isdir(d)
+            and pdf_name not in os.path.basename(d)
+            and "PDF変換" not in os.path.basename(d)]
     want = mapping.get("output_folder_contains", "")
     named = sorted([d for d in subs if want and want in os.path.basename(d)],
                    key=os.path.getmtime, reverse=True)
     others = sorted([d for d in subs if d not in named],
                     key=os.path.getmtime, reverse=True)
     order = named + others
-    # 解決済み（生成済み）を優先。テンプレ状態は飛ばす。
+    # ★様式/提供計画を実際に含むフォルダを最優先（Word/Excel問わず・置き場所に依存しない）
+    form_subs = [d for d in order if _has_form(d)]
+    if form_subs:
+        return form_subs[0]
+    if _has_form(outdir):
+        return outdir                                       # 直下に提供計画を置いた場合
+    # 従来ロジック（様式が見つからない時の保険）
     skipped = []
     for d in order:
         if _folder_is_resolved(d):
@@ -274,11 +296,11 @@ def _pick_output_folder(mapping):
             return d
         skipped.append(os.path.basename(d))
     if order:
-        return order[0]                                     # 全部テンプレ状態→最新（後段で警告）
+        return order[0]
     if (glob.glob(os.path.join(outdir, "01.*.xlsx"))
             or glob.glob(os.path.join(outdir, "*.docx"))
             or glob.glob(os.path.join(outdir, "*.pdf"))):
-        return outdir                                       # 直下に置いた場合
+        return outdir
     return ""
 
 
