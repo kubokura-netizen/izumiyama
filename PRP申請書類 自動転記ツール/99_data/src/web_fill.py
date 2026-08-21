@@ -322,7 +322,7 @@ class WordForm:
             for r in t.rows:
                 cells, prev = [], None
                 for c in r.cells:
-                    txt = TX.clean(c.text)
+                    txt = TX.clean(self._xml_text(c._tc))
                     if txt == prev:
                         continue                           # 結合セルの重複を畳む
                     cells.append(txt)
@@ -330,13 +330,39 @@ class WordForm:
                 if any(cells):
                     self.rows.append(cells)
         for p in doc.paragraphs:
-            t = (p.text or "").strip()
+            t = TX.clean(self._xml_text(p._p)).strip()
             if not t:
                 continue
-            # ラベルと値の区切り＝タブ / 全角スペース / 半角スペース2つ以上
-            parts = _re.split(r'[\t　]+|[ ]{2,}', t, maxsplit=1)
-            if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-                self.para_kv.append((self._norm(parts[0]), parts[1].strip()))
+            # ラベル<区切り>値。区切り＝タブ/全角スペース/半角スペース2つ以上。
+            # 「管理者　氏 名　山田 太郎」のように中間ラベルが挟まる形は、先頭=ラベル・末尾=値。
+            parts = [p for p in _re.split(r'[\t　]+|[ ]{2,}', t) if p.strip()]
+            if len(parts) >= 2:
+                self.para_kv.append((self._norm(parts[0]), parts[-1].strip()))
+
+    @staticmethod
+    def _xml_text(el):
+        """セル/段落のテキストを、コンテンツコントロール(w:sdt)やハイパーリンク内も
+           含めて取得。python-docxの.textはw:sdt内を読まないため全w:tを拾う。
+           タブ(w:tab)・改行(w:br/w:cr)も保持（段落ヘッダの区切り検出に必要）。"""
+        try:
+            from docx.oxml.ns import qn
+            wt, wtab, wbr, wcr = qn('w:t'), qn('w:tab'), qn('w:br'), qn('w:cr')
+
+            def ptext(p):
+                out = []
+                for n in p.xpath('.//w:t | .//w:tab | .//w:br | .//w:cr'):
+                    if n.tag == wt:
+                        out.append(n.text or "")
+                    elif n.tag == wtab:
+                        out.append("\t")
+                    else:
+                        out.append("\n")
+                return "".join(out)
+
+            ps = el.xpath('.//w:p')
+            return "\n".join(ptext(p) for p in ps) if ps else ptext(el)
+        except Exception:
+            return ""
 
     @staticmethod
     def _norm(s):
