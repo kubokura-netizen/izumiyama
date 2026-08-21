@@ -353,11 +353,14 @@ class WordForm:
             return c == h
         return (h in c) or (len(c) >= 4 and c in h)
 
-    def value(self, heading, exact=False, joiner="\n\n", occ=1):
+    def value(self, heading, exact=False, joiner="\n\n", occ=1, sub=None):
         """表から見出しの“後ろ”の非空セルを返す。occで同名見出しのN番目を選ぶ。
+           sub指定時は「見出し(ブロック)＋子ラベル→値」（例: 医師ブロック内の“氏名”）。
            表に無ければ冒頭ヘッダ段落（名称/住所/管理者 等）からも探す。"""
         if not heading:
             return ""
+        if sub:
+            return self.value_sub(heading, sub, occ)
         n = 0
         for cells in self.rows:
             for j, c in enumerate(cells):
@@ -369,7 +372,26 @@ class WordForm:
                             if n >= max(1, occ):
                                 return v
                             break                          # この見出し行の値は1つ→次の出現へ
-        return self.para_value(heading)
+        return ""                                          # 段落は where:para で明示的に読む（誤一致防止）
+
+    def value_sub(self, outer, inner, occ=1):
+        """ブロック見出し(outer)を含むセルの“後ろ”で 子ラベル(inner) を含むセルを探し、
+           その次の非空セルを値として返す（例: 医師ブロック内の氏名/所属）。"""
+        no, ni = self._norm(outer), self._norm(inner)
+        n = 0
+        for cells in self.rows:
+            oi = next((j for j, c in enumerate(cells) if no and no in self._norm(c)), None)
+            if oi is None:
+                continue
+            for j in range(oi + 1, len(cells)):
+                if ni and ni in self._norm(cells[j]):
+                    for v in cells[j + 1:]:
+                        if v and self._norm(v) != self._norm(cells[j]):
+                            n += 1
+                            if n >= max(1, occ):
+                                return v
+                            break
+        return ""
 
     def para_value(self, heading):
         """冒頭ヘッダ段落（『名 称␉BiOLiS』『管理者　佐々木』等）から値を返す。"""
@@ -703,15 +725,18 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None
         wspec = rowspec.get("word") or {}
         whead = wspec.get("heading", rowspec.get("heading", ""))
         wwhere = wspec.get("where", "auto")
-        wocc = int(wspec.get("occ", rowspec.get("occ", 1)))
+        # wordが独自見出しを持つ場合、行(Excel用)のoccは継承しない（word自身の指定=既定1）。
+        # wordが行見出しを流用する場合のみ、行のoccを引き継ぐ。
+        if wspec.get("heading"):
+            wocc = int(wspec.get("occ", 1))
+        else:
+            wocc = int(wspec.get("occ", rowspec.get("occ", 1)))
+        wsub = wspec.get("sub")                            # ブロック内の子ラベル（医師/施設 等）
         if wwhere == "para":                               # 冒頭ヘッダ段落のみ（名称/住所/管理者 等）
             v = out_word.para_value(whead)
-        elif wwhere == "table":                            # 表のみ
+        else:                                              # table/auto（subがあればブロック内読み）
             v = out_word.value(whead, bool(rowspec.get("exact", False)),
-                               rowspec.get("joiner", "\n\n"), wocc)
-        else:                                              # auto=表→段落
-            v = out_word.value(whead, bool(rowspec.get("exact", False)),
-                               rowspec.get("joiner", "\n\n"), wocc)
+                               rowspec.get("joiner", "\n\n"), wocc, wsub)
         tf = rowspec.get("tf")
         if tf in ("date_year", "date_month", "date_day"):
             s = v or ""
