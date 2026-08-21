@@ -737,6 +737,11 @@ def _resolve_value(fld, hearing, kits, out_ws=None, out_folder="", out_word=None
         else:                                              # table/auto（subがあればブロック内読み）
             v = out_word.value(whead, bool(rowspec.get("exact", False)),
                                rowspec.get("joiner", "\n\n"), wocc, wsub)
+        st = wspec.get("strip")                            # 先頭の見出しラベル除去（例:「【判断理由】」）
+        if st and v:
+            vv = v.lstrip()
+            if vv.startswith(st):
+                v = vv[len(st):].lstrip("\r\n 　\t")
         tf = rowspec.get("tf")
         if tf in ("date_year", "date_month", "date_day"):
             s = v or ""
