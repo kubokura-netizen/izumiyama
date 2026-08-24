@@ -46,10 +46,14 @@ if ($Tool -eq 'receipt') {
         RuntimeMaker = '98_dist\配布ランタイム作成.ps1'
         Keep         = @('01_input', '02_output', '04_work', '03_経費入力表蓄積',
                          '_runtime', '_ocr', '.venv', '.git', '.claude', '__pycache__')
-        Launcher     = '読取実行.bat'
+        Launcher     = '①読取実行.bat'
         Shortcut     = '領収書読取ツールを起動'
-        # クライアントの目に触れないよう隠す開発者用（削除はしない）
-        Hide         = @('初回準備.bat', '98_dist')
+        # クライアントの目に触れないよう隠す（削除はしない）。実行に使うパスは不変。
+        # ※ settings.json は フォルダ設定.bat が上書き保存するため隠さない
+        #   （Windowsは隠しファイルの上書き作成を拒否するため）。
+        Hide         = @('初回準備.bat', '98_dist', 'src',
+                         'README.md', '導入手順_クライアント向け.md', 'Ollama準備.bat',
+                         '.venv', '_ocr', '_runtime')
     }
 }
 else {

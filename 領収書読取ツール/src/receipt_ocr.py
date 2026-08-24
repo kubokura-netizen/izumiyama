@@ -349,10 +349,10 @@ THIN = Border(*[Side(style="thin", color="BFBFBF")] * 4)
 # 経費入力表の列並びに一致（A〜J）＋補助（K〜P）
 COLS = ["月", "日付", "GWS", "立替", "清算", "相手先", "内容", "収入", "支払", "差引（残額）",
         "確認", "状態", "元PDF", "No", "画像", "OCR抜粋",
-        "提案ファイル名", "保存先(年月)", "実行", "元パス"]     # Q〜T＝確定プラン
+        "提案ファイル名", "保存先(年月)", "実行", "元パス", "切出画像パス"]   # Q〜U＝確定プラン
 COPY_COLS = 10                                        # A〜J が経費入力表と同じ＝貼り付け対象
 IMG_COL = 15                                          # O列に画像
-PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL = 17, 18, 19, 20
+PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL, PLAN_CROP_COL = 17, 18, 19, 20, 21
 WRAP_COLS = {7, 16}                                   # 内容 / OCR抜粋 は折り返し
 
 
@@ -380,7 +380,7 @@ def _ensure_sheet(wb):
     # 1行目：使い方メモ（貼り付け範囲の案内）
     ws.cell(1, 1, "▼この行の下がデータ。K〜P=確認用（画像・OCR）。Q〜T=確定プラン"
                   "（提案ファイル名/保存先(年月)/実行☑/元パス）。内容を確認・修正し、"
-                  "実行する行の『実行』列を☑にして『確定実行.bat』を実行→リネーム・年月フォルダへ移動・"
+                  "実行する行の『実行』列を☑にして『②確定実行.bat』を実行→リネーム・年月フォルダへ移動・"
                   "経費入力表へ蓄積。赤=要手入力（既定は対象外）。")
     ws.cell(1, 1).font = Font(bold=True, color="C00000")
     # 2行目：見出し
@@ -392,7 +392,7 @@ def _ensure_sheet(wb):
         cell.alignment = Alignment(horizontal="center")
     widths = [5, 12, 6, 6, 6, 22, 28, 8, 10, 11,   # A〜J
               6, 15, 24, 5, 45, 40,                # K〜P（O=画像列を広めに）
-              36, 12, 6, 48]                       # Q〜T（確定プラン）
+              36, 12, 6, 48, 48]                   # Q〜U（確定プラン）
     for j, wd in enumerate(widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(j)].width = wd
     ws.freeze_panes = "A3"
@@ -423,19 +423,23 @@ def append_rows(entries, out_xlsx):
         for j in range(11, len(COLS) + 1):
             ws.cell(r, j).fill = helper_fill
         ws.cell(r, 12).fill = FLAG_FILL if e["flag"] else OK_FILL                  # 状態セル
-        # 確定プラン（Q〜T）：提案ファイル名・保存先(年月)・実行チェック・元パス
-        plan_name, ym = "", ""
-        if e.get("pdf_entries", 1) == 1:               # 1PDF=1明細のときだけ原本リネーム対象
-            nm = P.build_filename(f)
-            dt = P.parse_date(f.get("日付"))
-            if nm and dt:
-                plan_name, ym = nm, P.ym_folder(dt)
+        # 確定プラン（Q〜U）：提案ファイル名・保存先(年月)・実行・元パス・切出画像パス
+        #   1PDF=1明細 → 原本をリネームして年月へ。
+        #   束スキャン(複数明細) → 切出画像から個別PDFを作って年月へ（切出画像パスを持たせる）。
+        plan_name, ym, crop = "", "", ""
+        nm = P.build_filename(f)
+        dt = P.parse_date(f.get("日付"))
+        if nm and dt:
+            plan_name, ym = nm, P.ym_folder(dt)
+            if e.get("pdf_entries", 1) > 1:            # 束スキャン → 個別PDF化の元＝切出画像
+                crop = e.get("thumb", "")
         do_mark = "" if e["flag"] else "☑"             # ⚠は既定で対象外（確認後に手で☑）
         ws.cell(r, PLAN_NAME_COL, plan_name)
         ws.cell(r, PLAN_YM_COL, ym)
         ws.cell(r, PLAN_DO_COL, do_mark)
         ws.cell(r, PLAN_SRC_COL, e.get("src_path", ""))
-        for j in (PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL):
+        ws.cell(r, PLAN_CROP_COL, crop)
+        for j in (PLAN_NAME_COL, PLAN_YM_COL, PLAN_DO_COL, PLAN_SRC_COL, PLAN_CROP_COL):
             ws.cell(r, j).border = THIN
             ws.cell(r, j).fill = helper_fill
             ws.cell(r, j).alignment = Alignment(vertical="top",

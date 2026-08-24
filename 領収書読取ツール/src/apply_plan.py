@@ -26,7 +26,7 @@ DIR_OUT = os.path.join(ROOT, "02_output")
 SHEET = "領収書取込"
 # 下書きの列（receipt_ocr.py と一致）
 C_MON, C_DATE, C_AITE, C_NAIYO, C_PAY = 1, 2, 6, 7, 9
-C_STATE, C_NAME, C_YM, C_DO, C_SRC = 12, 17, 18, 19, 20
+C_STATE, C_NAME, C_YM, C_DO, C_SRC, C_CROP = 12, 17, 18, 19, 20, 21
 MASTER_HEADERS = ["月", "日付", "GWS", "立替", "清算", "相手先", "内容",
                   "収入", "支払", "差引（残額）"]
 
@@ -67,18 +67,34 @@ def append_to_master(wb, sheet_fmt, dt, month, aite, naiyo, amount):
     return ws.title, r
 
 
-def place_file(src, plan_name, ym, output_root, action):
-    """原本を 年月フォルダへ リネームして配置。実施したパスを返す（不可ならNone）。"""
-    if not (src and plan_name and ym) or not os.path.exists(src):
+def _img_to_pdf(img_path, pdf_path):
+    """切出画像(PNG) → 1ページPDF。束スキャンの各レシートを個別PDF化するため。"""
+    from PIL import Image
+    im = Image.open(img_path)
+    if im.mode != "RGB":
+        im = im.convert("RGB")
+    im.save(pdf_path, "PDF", resolution=200.0)
+
+
+def place_file(src, plan_name, ym, output_root, action, crop=""):
+    """年月フォルダへ配置し、実施パスを返す（不可ならNone）。
+       crop(切出画像)があれば → 束スキャンの1レシートを個別PDF化して配置。
+       無ければ → 原本(src=1PDF1明細)をリネームして配置。"""
+    if not (plan_name and ym):
         return None
     folder = os.path.join(output_root, ym)
     os.makedirs(folder, exist_ok=True)
     dest = P.unique_path(folder, plan_name)
-    if action == "move":
-        shutil.move(src, dest)
-    else:
-        shutil.copy2(src, dest)
-    return dest
+    if crop and os.path.exists(crop):
+        _img_to_pdf(crop, dest)                        # 束スキャン→個別PDF
+        return dest
+    if src and os.path.exists(src):
+        if action == "move":
+            shutil.move(src, dest)
+        else:
+            shutil.copy2(src, dest)
+        return dest
+    return None
 
 
 def process_draft(path, cfg, wb_master, logs):
@@ -102,9 +118,10 @@ def process_draft(path, cfg, wb_master, logs):
         sname, mr = append_to_master(wb_master, cfg["month_sheet_fmt"], dt, dt.month,
                                      aite, naiyo, amount)
         done_x += 1
-        # ② 原本のリネーム＆年月配置（提案名がある＝1PDF1明細のときのみ）
+        # ② 年月フォルダへ配置：1PDF1明細=原本リネーム / 束スキャン=切出画像を個別PDF化
         dest = place_file(ws.cell(r, C_SRC).value, ws.cell(r, C_NAME).value,
-                          ws.cell(r, C_YM).value, cfg["output_root"], cfg["file_action"])
+                          ws.cell(r, C_YM).value, cfg["output_root"], cfg["file_action"],
+                          ws.cell(r, C_CROP).value)
         if dest:
             done_f += 1
             logs.append("  ○ %s → %s（%s r%d）" %

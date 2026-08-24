@@ -69,5 +69,5 @@ Write-Host ''
 Write-Host '渡すときに伝えること:'
 Write-Host '  1. ZIPを右クリック→すべて展開（ZIPのまま実行しない）'
 Write-Host '  2. 高精度にするなら「Ollama準備.bat」を一度実行（約3GB DL・任意）'
-Write-Host '  3. PDFを 01_input に入れ、「読取実行.bat」をダブルクリック'
+Write-Host '  3. PDFを 01_input に入れ、「①読取実行.bat」をダブルクリック'
 
