@@ -44,7 +44,7 @@ if ($Tool -eq 'receipt') {
         MarkerDirRx  = 'src$'
         MarkerRel    = 'src\receipt_ocr.py'
         RuntimeMaker = '98_dist\配布ランタイム作成.ps1'
-        Keep         = @('01_input', '02_output', '03_work',
+        Keep         = @('01_input', '02_output', '04_work', '03_経費入力表蓄積',
                          '_runtime', '_ocr', '.venv', '.git', '.claude', '__pycache__')
         Launcher     = '読取実行.bat'
         Shortcut     = '領収書読取ツールを起動'

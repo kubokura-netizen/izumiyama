@@ -17,5 +17,8 @@ settings.json
 !01_input/.gitkeep
 02_output/*
 !02_output/.gitkeep
-03_work/*
-!03_work/.gitkeep
+04_work/*
+!04_work/.gitkeep
+
+# 蓄積した経費入力表（実データ）。実行時にテンプレから自動生成されるため追跡しない。
+03_経費入力表蓄積/

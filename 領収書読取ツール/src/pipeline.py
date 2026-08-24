@@ -21,8 +21,11 @@ DEFAULTS = {
     "input_dir": "01_input",
     # 年月フォルダとマスターExcelを置く親。空なら 02_output を使う。
     "output_root": "",
-    # 蓄積先の経費入力表.xlsx（フルパス）。空なら 02_output\\経費入力表_取込.xlsx。
-    "master_xlsx": "",
+    # 蓄積先の経費入力表.xlsx。既定は 03_経費入力表蓄積\\経費入力表.xlsx。
+    # ここへ月シート「経費(N)」に蓄積していく（読取の下書き取込.xlsxは確認用に別途残る）。
+    "master_xlsx": "03_経費入力表蓄積/経費入力表.xlsx",
+    # 蓄積先が未作成なら、この元フォーマットからコピーして作る（保存用＋経費(1〜12)）。
+    "template_xlsx": "97_テンプレート/経費入力表.xlsx",
     # 月シート名の書式（{m}=月番号）。例: 経費(8)
     "month_sheet_fmt": "経費({m})",
     # 原本の扱い: copy=コピーして年月へ / move=移動
@@ -48,7 +51,9 @@ def load_settings():
     cfg["input_dir"] = _abs(ROOT, cfg.get("input_dir") or "01_input")
     cfg["output_root"] = _abs(ROOT, cfg.get("output_root")) or out
     cfg["master_xlsx"] = _abs(ROOT, cfg.get("master_xlsx")) \
-        or os.path.join(out, "経費入力表_取込.xlsx")
+        or os.path.join(ROOT, "03_経費入力表蓄積", "経費入力表.xlsx")
+    cfg["template_xlsx"] = _abs(ROOT, cfg.get("template_xlsx")) \
+        or os.path.join(ROOT, "97_テンプレート", "経費入力表.xlsx")
     return cfg
 
 

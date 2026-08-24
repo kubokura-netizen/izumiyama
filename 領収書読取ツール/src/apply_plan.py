@@ -129,10 +129,17 @@ def main():
         print("下書き(経費入力表_取込*.xlsx)が 02_output にありません。先に読取実行してください。")
         return
     if not os.path.exists(cfg["master_xlsx"]):
-        # マスターが無ければ新規作成（空ブック）。月シートは追記時に自動作成。
-        wb_master = openpyxl.Workbook()
-        wb_master.remove(wb_master.active)
-        print("  ※ 経費入力表が無いため新規作成します。")
+        # 蓄積先が無ければ、元フォーマット(テンプレ)からコピーして作る（保存用＋経費(N)を維持）。
+        os.makedirs(os.path.dirname(cfg["master_xlsx"]), exist_ok=True)
+        tmpl = cfg.get("template_xlsx", "")
+        if tmpl and os.path.exists(tmpl):
+            shutil.copy2(tmpl, cfg["master_xlsx"])
+            print("  ※ 蓄積先が無いのでテンプレから作成: %s" % cfg["master_xlsx"])
+            wb_master = openpyxl.load_workbook(cfg["master_xlsx"])
+        else:
+            wb_master = openpyxl.Workbook()
+            wb_master.remove(wb_master.active)
+            print("  ※ 蓄積先もテンプレも無いため空で新規作成します。")
         bak = None
     else:
         bak = _backup(cfg["master_xlsx"])

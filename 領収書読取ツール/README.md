@@ -79,7 +79,7 @@
 領収書読取ツール\
   01_input\        ← ここにPDFを入れる
   02_output\       ← 経費入力表_取込.xlsx / 取込レポート.txt
-  03_work\         ← 切り出し画像（作業用）
+  04_work\         ← 切り出し画像（作業用）
   _ocr\tesseract\  ← OCR本体（同梱）
   src\             ← プログラム
   読取実行.bat / 初回準備.bat

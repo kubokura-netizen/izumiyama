@@ -33,7 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DIR_IN = os.path.join(ROOT, "01_input")
 DIR_OUT = os.path.join(ROOT, "02_output")
-DIR_WORK = os.path.join(ROOT, "03_work")
+DIR_WORK = os.path.join(ROOT, "04_work")
 TESS_DIR = os.path.join(ROOT, "_ocr", "tesseract")
 TESS_EXE = os.path.join(TESS_DIR, "tesseract.exe")
 TESSDATA = os.path.join(TESS_DIR, "tessdata")
@@ -294,8 +294,22 @@ def _amount(text):
                 push(m.group(1), 1)
     if not cands:
         return ""
-    best = max(cands, key=lambda c: (c[1], c[0]))   # 優先度→金額
-    return best[0]
+    max_pri = max(c[1] for c in cands)
+    top = [a for a, pri in cands if pri == max_pri]
+    if max_pri >= 2:
+        return max(top)                              # ¥/合計アンカーあり→信頼して最大
+    # --- フォールバック(アンカー無し): 外れ値(誤読の巨大数)を避ける ---
+    from collections import Counter
+    cnt = Counter(top)
+    rep = sorted((a for a, n in cnt.items() if n >= 2), reverse=True)
+    if rep:
+        return rep[0]                                # 繰り返す値=小計/合計の可能性大（例:250,250）
+    uniq = sorted(set(top), reverse=True)
+    # 単発の極端な高額(10万以上 かつ 2番目の5倍超)は誤読の疑い → 空(要手入力)。
+    # 誤った数字を出すより空にして人に確認させる（外れ値を出さない方針）。
+    if len(uniq) >= 2 and uniq[0] >= 100000 and uniq[0] > uniq[1] * 5:
+        return ""
+    return uniq[0] if uniq else ""
 
 
 def _vendor(text):

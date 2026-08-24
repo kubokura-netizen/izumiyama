@@ -3,7 +3,7 @@
 #
 #  そのまま人に渡せるZIPをデスクトップに作る。
 #   - _runtime(Python同梱) と _ocr(Tesseract同梱) を含める → 配布先はPython/管理者不要
-#   - 入出力データ(01_input/02_output/03_work の中身)は除外
+#   - 入出力データ(01_input/02_output/04_work の中身)は除外
 #   - .venv / .git / __pycache__ / 98_dist(メンテ用) は除外
 #   - Ollama本体とモデルは含めない（サイズ大。配布先で「Ollama準備.bat」で導入）
 #
@@ -25,7 +25,7 @@ if (-not (Test-Path (Join-Path $Root '_ocr\tesseract\tesseract.exe'))) {
     exit 1
 }
 
-$EmptyDirs    = @('01_input', '02_output', '03_work')      # 中身は入れずフォルダだけ作る
+$EmptyDirs    = @('01_input', '02_output', '04_work')      # 中身は入れずフォルダだけ作る
 $ExcludeNames = @('.venv', '.git', '.claude', '__pycache__', '98_dist')
 
 $Stage = Join-Path $env:SystemDrive ('\_rcptdist_' + [System.Guid]::NewGuid().ToString('N').Substring(0, 6))
