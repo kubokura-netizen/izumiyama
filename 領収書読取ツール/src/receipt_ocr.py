@@ -476,6 +476,18 @@ def check_ready():
     return True, "OK"
 
 
+def _page_has_text(pdf_path, pi):
+    """そのページにテキスト層があるか（＝デジタル発行のPDF）。
+       デジタルは1枚=1書類なので分割しない（分割すると金額欄を外して誤読する）。"""
+    try:
+        doc = fitz.open(pdf_path)
+        t = doc[pi].get_text().strip()
+        doc.close()
+        return len(t) >= 50
+    except Exception:
+        return False
+
+
 def process_pdf(pdf_path, report):
     base = os.path.basename(pdf_path)
     img, npages = render_page(pdf_path, 0)
@@ -483,7 +495,13 @@ def process_pdf(pdf_path, report):
     for pi in range(npages):
         if pi > 0:
             img, _ = render_page(pdf_path, pi)
-        boxes = detect_receipts(img)
+        # デジタルPDF(テキスト層あり)＝1書類 → ページ全体を1件に。
+        # スキャン画像(テキスト層なし)＝複数レシートの可能性 → 従来どおり分割。
+        if _page_has_text(pdf_path, pi):
+            h, w = img.shape[:2]
+            boxes = [[0, 0, w, h]]
+        else:
+            boxes = detect_receipts(img)
         for idx, b in enumerate(boxes, 1):
             crop = auto_rotate(img[b[1]:b[3], b[0]:b[2]])
             no = "%d-%d" % (pi + 1, idx) if npages > 1 else str(idx)
